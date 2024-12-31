@@ -20,6 +20,7 @@ class Transaction: public StreamableDTO {
 
   private:
     friend class SDStorage;
+    friend class SDStorageTestHelper;
     static uint16_t _idSeq;
     static StreamableDTO* _locks; // file access locks
     bool _isCommitted = false;

@@ -76,7 +76,7 @@ void testSaveIndividualFile(TestInvocation* t) {
   StreamableDTO dto;
   dto.put("def", "ghi");
   do {
-    if (!sdStorage.save(STR("writeMe.dat"), &dto, nullptr, &ts)) {
+    if (!sdStorage.save(&ts, STR("writeMe.dat"), &dto)) {
       t->message = STR("Save failed");
       break;
     }
@@ -107,11 +107,11 @@ void testCreateTransaction(TestInvocation* t) {
     }
     ts.onExistsReturn = true; // checking file to erase
     ts.writeTxnDataCaptor.reset();    
-    if (!sdStorage.erase(txn, "file1.dat", &ts)) {
+    if (!sdStorage.erase(&ts, "file1.dat", txn)) {
       t->message = STR("erase call failed");
       break;
     }
-    if (sdStorage.erase(txn, "file3.dat", &ts)) {
+    if (sdStorage.erase(&ts, "file3.dat", txn)) {
       t->message = STR("Should have failed with file not part of transaction");
       break;
     }
@@ -120,13 +120,13 @@ void testCreateTransaction(TestInvocation* t) {
       break;
     }
     ts.onExistsReturn = true;
-    ts.onRemoveReturn = true;
-    if (!sdStorage.abortTxn(txn, &ts)) {
-      t->message = STR("abortTxn failed");
-      break;
-    }
     t->success = true;
   } while (false);
+  ts.onRemoveReturn = true;
+  if (!sdStorage.abortTxn(txn, &ts)) {
+    t->success = false;
+    t->message = STR("abortTxn failed");
+  }
 }
 
 void testCreateTransactionCleanupFails(TestInvocation* t) {
@@ -184,6 +184,176 @@ void testIdxFilename(TestInvocation* t) {
   } while (false);
 }
 
+void testIdxUpsert(TestInvocation *t) {
+  t->name = STR("Index upsert");
+  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  MockSdFat::TestState ts;
+  Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
+  do {
+    if (!txn) {
+      t->message = STR("Create transaction failed");
+      break;
+    }
+    ts.onExistsReturn = false;
+    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("fan"), STR("1"), txn)) {
+      t->message = STR("First entry insert failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("fan=1\n"))) {
+      t->message = STR("Unexpected first index entry written");
+      break;
+    }
+    ts.writeIdxDataCaptor.reset();
+    ts.onExistsReturn = true; // index file exists
+    ts.onReadIdxData = STR("fan=1\n");
+    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("ear"), STR("6"), txn)) {
+      t->message = STR("Insert first line failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=1\n"))) {
+      t->message = STR("Inserted first line in wrong position");
+      break;
+    }
+    ts.writeIdxDataCaptor.reset();
+    ts.onReadIdxData = STR("ear=6\nfan=1\n");
+    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("egg"), STR("12"), txn)) {
+      t->message = STR("Insert between failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\negg=12\nfan=1\n"))) {
+      t->message = STR("Inserted between in wrong position");
+      break;
+    }
+    ts.writeIdxDataCaptor.reset();
+    ts.onReadIdxData = STR("ear=6\nfan=1\n");
+    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("gum"), STR("3"), txn)) {
+      t->message = STR("Insert after last failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=1\ngum=3\n"))) {
+      t->message = STR("Inserted after last in wrong position");
+      break;
+    }
+    ts.writeIdxDataCaptor.reset();
+    ts.onReadIdxData = STR("ear=6\nfan=1\n");
+    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("fan"), STR("3"), txn)) {
+      t->message = STR("Update index entry failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=3\n"))) {
+      t->message = STR("Unexpected index data after update entry");
+      break;
+    }
+    t->success = true;
+  } while (false);
+  ts.onRemoveReturn = true;
+  if (!sdStorage.abortTxn(txn, &ts)) {
+    t->success = false;
+    t->message = STR("Abort transaction failed");
+  }
+}
+
+void testIdxRemove(TestInvocation *t) {
+  t->name = STR("Index remove");
+  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  MockSdFat::TestState ts;
+  Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
+  do {
+    if (!txn) {
+      t->message = STR("Create transaction failed");
+      break;
+    }
+    ts.onExistsReturn = true; // index file exists
+    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
+    if (!sdStorage.idxRemove(&ts, STR("myIndex"), STR("ear"), txn)) {
+      t->message = STR("Remove key failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("egg=45\nfan=1\n"))) {
+      t->message = STR("Unexpected index data after remove key");
+      break;
+    }
+    t->success = true;
+  } while (false);
+  ts.onRemoveReturn = true;
+  if (!sdStorage.abortTxn(txn, &ts)) {
+    t->success = false;
+    t->message = STR("Abort transaction failed");
+  }
+}
+
+void testIdxLookup(TestInvocation *t) {
+  t->name = STR("Index lookup");
+  MockSdFat::TestState ts;
+  do {
+    ts.onExistsReturn = true; // index file exists
+    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
+    String value = sdStorage.idxLookup(STR("myIndex"), STR("egg"), &ts);
+    if (value.length() == 0) {
+      t->message = STR("Lookup failed");
+      break;
+    }
+    if (!value.equals(STR("45"))) {
+      t->message = STR("Incorrect value from index lookup");
+      break;
+    }
+    value = sdStorage.idxLookup(STR("myIndex"), STR("foo"), &ts);
+    if (value.length() != 0) {
+      t->message = STR("Expected empty string");
+      break;
+    }
+    t->success = true;
+  } while (false);
+}
+
+void testIdxHasKey(TestInvocation *t) {
+  t->name = STR("Index key exists");
+  MockSdFat::TestState ts;
+  do {
+    ts.onExistsReturn = true; // index file exists
+    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
+    if (!sdStorage.idxHasKey(STR("myIndex"), STR("ear"), &ts)) {
+      t->message = STR("Key should have existed");
+      break;
+    }
+    if (sdStorage.idxHasKey(STR("myIndex"), STR("lap"), &ts)) {
+      t->message = STR("Key should not have existed");
+      break;
+    }
+    t->success = true;
+  } while (false);
+}
+
+void testIdxRenameKey(TestInvocation *t) {
+  t->name = STR("Rename index key");
+  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  MockSdFat::TestState ts;
+  Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
+  do {
+    if (!txn) {
+      t->message = STR("Create transaction failed");
+      break;
+    }
+    ts.onExistsReturn = true; // index file exists
+    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
+    if (!sdStorage.idxRename(&ts, STR("myIndex"), STR("egg"), STR("bag"), txn)) {
+      t->message = STR("Rename key failed");
+      break;
+    }
+    if (!ts.writeIdxDataCaptor.getString().equals(STR("bag=45\near=3\nfan=1\n"))) {
+      t->message = STR("Unexpected index data after rename key");
+      break;
+    }
+    t->success = true;
+  } while (false);
+  ts.onRemoveReturn = true;
+  if (!sdStorage.abortTxn(txn, &ts)) {
+    t->success = false;
+    t->message = STR("Abort transaction failed");
+  }
+}
+
+
 bool printAndCheckResult(TestInvocation* t) {
   uint8_t nameWidth = 48;
   String name;
@@ -232,7 +402,12 @@ void setup() {
     testCreateTransaction,
     testCreateTransactionCleanupFails,
     testCommitTxNewFile,
-   testIdxFilename
+    testIdxFilename,
+    testIdxUpsert,
+    testIdxRemove,
+    testIdxLookup,
+    testIdxHasKey,
+    testIdxRenameKey
 
   };
 

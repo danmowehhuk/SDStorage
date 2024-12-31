@@ -2,7 +2,28 @@
 #include "SDStorage.h"
 #include "Transaction.h"
 
+/*
+ * Prepends the filename with the root directory if it isn't already.
+ * Example:
+ *    "foo.txt"             -->  "/<rootdir>/foo.txt"
+ *    "/foo.txt"            -->  "/<rootdir>/foo.txt"
+ *    "/<rootdir>/foo.txt"  -->   "/<rootdir>/foo.txt"
+ */
+String SDStorage::realFilename(const String& filename) {
+  if (filename.startsWith(_rootDir + String(F("/")))) return filename;
+  String resolvedName;
+  bool addSlash = false;
+  if (!filename.startsWith(String(F("/")))) {
+    addSlash = true;
+  }
+  resolvedName.reserve(_rootDir.length() + (addSlash ? 1 : 0) + filename.length());
+  resolvedName = _rootDir + (addSlash ? String(F("/")):String()) + filename;
+  return resolvedName;
+}
 
+/*
+ * see SDStorage.h
+ */
 bool SDStorage::begin(void* testState = nullptr) {
   _rootDir.trim();
   bool sdInit = false;
@@ -26,18 +47,9 @@ bool SDStorage::begin(void* testState = nullptr) {
   return sdInit;
 }
 
-String SDStorage::realFilename(const String& filename) {
-  if (filename.startsWith(_rootDir + String(F("/")))) return filename;
-  String resolvedName;
-  bool addSlash = false;
-  if (!filename.startsWith(String(F("/")))) {
-    addSlash = true;
-  }
-  resolvedName.reserve(_rootDir.length() + (addSlash ? 1 : 0) + filename.length());
-  resolvedName = _rootDir + (addSlash ? String(F("/")):String()) + filename;
-  return resolvedName;
-}
-
+/*
+ * see SDStorage.h
+ */
 String SDStorage::indexFilename(const String &idxName) {
   String idxFilename;
   String ext = String(reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_INDEX_EXTSN));
@@ -46,14 +58,26 @@ String SDStorage::indexFilename(const String &idxName) {
   return idxFilename;
 }
 
+/*
+ * Returns true if the file exists (after prepending the root dir on the 
+ * filename if necessary)
+ */
 bool SDStorage::exists(const String &filename, void* testState = nullptr) {
   return _exists(realFilename(filename), testState);
 }
 
+/*
+ * Creates a new directory (after prepending the root dir on the 
+ * dirName if necessary). Returns true if successful.
+ */
 bool SDStorage::mkdir(const String &dirName, void* testState = nullptr) {
   return _mkdir(realFilename(dirName), testState);
 }
 
+/*
+ * Populates the DTO with data read from a file (after prepending the root dir
+ * on the filename if necessary)
+ */
 bool SDStorage::load(const String &filename, StreamableDTO* dto, void* testState = nullptr) {
   String resolvedFilename = realFilename(filename);
   if (!_exists(resolvedFilename, testState)) {
@@ -62,7 +86,16 @@ bool SDStorage::load(const String &filename, StreamableDTO* dto, void* testState
   return _loadFromStream(resolvedFilename, dto, testState);
 }
 
-bool SDStorage::save(const String &filename, StreamableDTO* dto, Transaction* txn = nullptr, void* testState = nullptr) {
+/*
+ * Writes the DTO data with data to a file (after prepending the root dir on
+ * the filename if necessary). If no transaction is provided, the write is
+ * auto-committed.
+ */
+bool SDStorage::save(const String &filename, StreamableDTO* dto, Transaction* txn = nullptr) {
+  return save(nullptr, filename, dto, txn);
+}
+
+bool SDStorage::save(void* testState, const String &filename, StreamableDTO* dto, Transaction* txn = nullptr) {
   String resolvedFilename = realFilename(filename);
   bool implicitTx = false;
   if (txn == nullptr) {
@@ -77,11 +110,15 @@ bool SDStorage::save(const String &filename, StreamableDTO* dto, Transaction* tx
   return true;
 }
 
-bool SDStorage::erase(const String &filename, void* testState = nullptr) {
-  return erase(nullptr, filename, testState);
+/*
+ * Deletes a file (after prepending the root dir on the filename if necessary).
+ * If no transaction is provided, the write is auto-committed.
+ */
+bool SDStorage::erase(const String &filename, Transaction* txn = nullptr) {
+  return erase(nullptr, filename, txn);
 }
 
-bool SDStorage::erase(Transaction* txn, const String &filename, void* testState = nullptr) {
+bool SDStorage::erase(void* testState, const String &filename, Transaction* txn = nullptr) {
   String resolvedFilename = realFilename(filename);
   if (!_exists(resolvedFilename, testState)) {
     return false;
@@ -97,164 +134,180 @@ bool SDStorage::erase(Transaction* txn, const String &filename, void* testState 
   }
 }
 
-// bool SDStorage::idxPrefixSearch(const String &idxName, const String &prefix) { //, IndexEntry<T>* resultHead);
+/*
+ * Scans the index looking for state->key and populating the state->keyExists and state->value
+ * fields on the IdxScanCapture object passed in. Scanning stops when the key is found.
+ */
+void SDStorage::_idxScan(const String& idxName, IdxScanCapture* state, void* testState = nullptr) {
+  if (idxName.length() == 0 || state->key.length() == 0) {
+#if (defined(DEBUG))
+    Serial.println(F("SDStorage::_idxScan - idxName and key cannot be empty"));
+#endif
+    return;
+  }
+  String idxFilename = indexFilename(idxName);
+  if (!_exists(idxFilename, testState)) {
+    // Index has no entries - leave state->keyExists false and state->value empty
+  } else {
+    _scanIndex(idxFilename, SDStorage::idxLookupFilter, state, testState);
+  }
+}
 
-//   // TODO
+/*
+ * Returns true if the index contains the provided key
+ */
+bool SDStorage::idxHasKey(const String &idxName, const String &key, void* testState = nullptr) {
+  IdxScanCapture state(key);
+  _idxScan(idxName, &state, testState);
+  return state.keyExists;
+}
 
-//   return false;
-// } 
+/*
+ * Returns the value associated with the key, or an empty string. Note that the empty
+ * string is a legitimate value, so don't use this to determine if a key exists.
+ */
+String SDStorage::idxLookup(const String &idxName, const String &key, void* testState = nullptr) {
+  IdxScanCapture state(key);
+  _idxScan(idxName, &state, testState);
+  return state.value;
+}
 
-// bool SDStorage::idxHasKey(const String &idxName, const String &key) {
-//   struct State {
-//     const String& key;
-//     bool hasKey = false;
-//     State(const String& key): key(key) {};
-//   };
-//   key.trim();
-//   State state(key);
-//   auto filter = [](const String &line, StreamableManager::DestinationStream* dest, void* statePtr) -> bool {
-//     State* state = static_cast<State*>(statePtr);
-//     if (extractKey(line).equals(state->key)) {
-//       state->hasKey = true;
-//       return false; // stop scanning
-//     }
-//     return true; // keep going
-//   };
-//   return (_scanIndex(idxName, filter, &state) && state.hasKey);
-// }
-
+/*
+ * Inserts a key/value into the index, keeping the keys in their natural/alphabetical order
+ * or updates the value if the key exists. If no transaction is provided, the insert/update
+ * is auto-committed. Returns true if the insert/update was successful.
+ */
 bool SDStorage::idxUpsert(const String &idxName, const String &key, const String &value, Transaction* txn = nullptr) {
   return idxUpsert(nullptr, idxName, key, value, txn);
 }
 
-bool SDStorage::idxUpsert(void* testState, const String &idxName, const String &key, const String &value, Transaction* txn = nullptr) {
-
-
-//   struct State {
-//     const String& key;
-//     const String& value;
-//     String prevKey = String();
-//     State(const String& key, const String& value): key(key), value(value) {};
-//   };
-//   State state(key, value);
-
-  // TODO preserve key order
-
-  //  auto filter = [](const String &line, StreamableManager::DestinationStream* dest, void* statePtr) -> bool {
-  //   int separatorIndex = line.indexOf('=');
-  //   String k = line.substring(0, separatorIndex);
-  //   k.trim();
-  //   String v = line.substring(separatorIndex + 1);
-  //   v.trim();
-  //   if (k.equals(key)) {
-  //     // update the value
-  //     dest->println(key + String(F("=")) + value);
-  //   } else {
-  //     // copy the line unchanged
-  //     dest->println(line);
-  //   }
-  //   return true;
-  // };
-  // return _updateIndex(idxName, filter, txn);
-
-  return false;
+bool SDStorage::idxUpsert(void* testState, const String &idxName, const String &key, 
+        const String &value, Transaction* txn = nullptr) {
+  if (idxName.length() == 0 || key.length() == 0) {
+#if (defined(DEBUG))
+    Serial.println(F("SDStorage::idxUpsert - idxName and key cannot be empty"));
+#endif
+    return false;
+  }
+  String idxFilename = indexFilename(idxName);
+  bool implicitTx = false;
+  if (txn == nullptr) {
+    // make an implicit, single-file transaction
+    txn = beginTxn(testState, idxFilename);
+    implicitTx = true;
+  }
+  IdxScanCapture state(key, value);
+  String tmpFilename = getTmpFilename(txn, idxFilename);
+  if (tmpFilename.length() == 0) {
+    // Problem with transaction that was passed in - leave state.didUpsert as false
+    return false;
+  } else if (!_exists(idxFilename, testState)) {
+    // First write to the index
+    _writeIndexLine(tmpFilename, toIndexLine(key, value), testState);
+    state.didUpsert = true;
+  } else {
+    _updateIndex(idxFilename, tmpFilename, SDStorage::idxUpsertFilter, &state, testState);
+    if (!state.didUpsert) {
+      // new key goes at the end
+      _writeIndexLine(tmpFilename, toIndexLine(key, state.valueIn), testState);
+    }
+  }
+  return finalizeTxn(txn, implicitTx, true, testState);
 }
 
-// bool SDStorage::idxRemove(const String &idxName, const String &key, Transaction* txn = nullptr) {
-//   struct State {
-//     const String& key;
-//     State(const String& key): key(key) {};
-//   };
-//   State state(key);
-//   auto filter = [](const String &line, StreamableManager::DestinationStream* dest, void* statePtr) -> bool {
-//     State* state = static_cast<State*>(statePtr);
-//     String key = extractKey(line);
-//     if (key.equals(state->key)) { /* skip it */ } else { dest->println(line); }
-//     return true;
-//   };
-//   return _updateIndex(idxName, filter, &state, txn);
-// }
+/*
+ * Removes a key from the index. If no transaction is provided, the removal
+ * is auto-committed. Returns true if the key existed and was successfully removed.
+ */
+bool SDStorage::idxRemove(const String &idxName, const String &key, Transaction* txn = nullptr) {
+  return idxRemove(nullptr, idxName, key, txn);
+}
 
-// bool SDStorage::idxRename(const String &idxName, const String &oldKey, const String &newKey, Transaction* txn = nullptr) {
+bool SDStorage::idxRemove(void* testState, const String &idxName, const String &key, Transaction* txn = nullptr) {
+  if (idxName.length() == 0 || key.length() == 0) {
+#if (defined(DEBUG))
+    Serial.println(F("SDStorage::idxRemove - idxName and key cannot be empty"));
+#endif
+    return false;
+  }
+  String idxFilename = indexFilename(idxName);
+  bool implicitTx = false;
+  if (txn == nullptr) {
+    // make an implicit, single-file transaction
+    txn = beginTxn(testState, idxFilename);
+    implicitTx = true;
+  }
+  IdxScanCapture state(key);
+  String tmpFilename = getTmpFilename(txn, idxFilename);
+  if (tmpFilename.length() == 0) {
+    // Problem with transaction that was passed in - leave state.didUpsert as false
+    return false;
+  } else if (!_exists(idxFilename, testState)) {
+    // Empty index - leave state.didRemove as false
+  } else {
+    _updateIndex(idxFilename, tmpFilename, SDStorage::idxRemoveFilter, &state, testState);
+  }
+  return finalizeTxn(txn, implicitTx, state.didRemove, testState);
+}
 
-//   // TODO: check that new key name doesn't exist already
+/*
+ * Renames a key in the index, updating its position to preserve natural/alphabetical
+ * key ordering. The new key name cannot already exist in the index. If no transaction
+ * is provided, the change is auto-committed. Returns true if the rename was successful.
+ */
+bool SDStorage::idxRename(const String &idxName, const String &oldKey, const String &newKey, Transaction* txn = nullptr) {
+  return idxRename(nullptr, idxName, oldKey, newKey, txn);
+}
 
-//   // TODO: insert keeping the keys sorted, remove oldKey
+bool SDStorage::idxRename(void* testState, const String &idxName, 
+        const String &oldKey, const String &newKey, Transaction* txn = nullptr) {
+  if (idxName.length() == 0 || oldKey.length() == 0 || newKey.length() == 0) {
+#if (defined(DEBUG))
+    Serial.println(F("SDStorage::idxRename - idxName, oldKey and newKey cannot be empty"));
+#endif
+    return false;
+  }
+  String idxFilename = indexFilename(idxName);
+  bool implicitTx = false;
+  if (txn == nullptr) {
+    // make an implicit, single-file transaction
+    txn = beginTxn(testState, idxFilename);
+    implicitTx = true;
+  }
+  IdxScanCapture state(oldKey, newKey, true);
+  String tmpFilename = getTmpFilename(txn, idxFilename);
+  if (tmpFilename.length() == 0) {
+    // Problem with transaction that was passed in - leave state.didUpsert as false
+    return false;
+  }
+  IdxScanCapture lookupState(oldKey);
+  _idxScan(idxName, &lookupState, testState);
+  if (!lookupState.keyExists) {
+    // Leave state->didInsert and state->didRemove as false
+#if (defined(DEBUG))
+    Serial.println(String(F("Key to rename does not exist in ")) + idxName);
+#endif
+  } else {
+    state.value = lookupState.value;
+    _updateIndex(idxFilename, tmpFilename, SDStorage::idxRenameFilter, &state, testState);
+  }
+  return finalizeTxn(txn, implicitTx, (state.didRemove && state.didInsert), testState);
+}
 
-//   return false;
-// }
-
-// bool SDStorage::_updateIndex(const String &idxName, StreamableManager::FilterFunction filter, void* statePtr, Transaction* txn = nullptr) {
-//   String idxFilename = indexFilename(idxName);
-//   bool implicitTx = false;
-//   if (txn == nullptr) {
-//     // make an implicit, single-file transaction
-//     txn = beginTxn(idxFilename);
-//     implicitTx = true;
-//   }
-//   String tmpFilename = txn->getTmpFilename(idxFilename);
-//   if (tmpFilename.length() == 0) {
-// #if defined(DEBUG)
-//     Serial.println(idxFilename + String(F(" not part of this transaction")));
-// #endif
-//     return false;
-//   }
-//   bool updateSuccess = false;
-//   do {
-//     File inFile = _sd.open(idxFilename, FILE_READ);
-//     File outFile = _sd.open(tmpFilename, FILE_WRITE);
-//     if (!outFile) break;
-//     if (!inFile) {
-//       // first write to this index, pass an empty string to the filter function
-//       StreamableManager::DestinationStream destStream(&outFile);
-//       filter(String(), &destStream, statePtr);
-//     } else {
-//       _streams.pipe(&inFile, &outFile, filter, statePtr);
-//       filter(String(), &outFile, statePtr); // optional last line
-//       inFile.close();
-//     }
-//     outFile.close();
-//     if (implicitTx) {
-//       if (!commitTxn(txn)) {
-//   #if defined(DEBUG)
-//         Serial.println(String(F("Index update failed for: ")) + idxFilename);
-//   #endif
-//         abortTxn(txn);
-//         return false;
-//       }
-//     }
-//     updateSuccess = true;
-//   } while (false);
-//   return updateSuccess;
-// }
-
-// bool SDStorage::_scanIndex(const String &idxName, StreamableManager::FilterFunction filter, void* statePtr) {
-//   String idxFilename = indexFilename(idxName);
-//   File idxFile = _sd.open(idxFilename, FILE_READ);
-//   if (!idxFile) return false;
-//   _streams.pipe(&idxFile, nullptr, filter, statePtr);
-//   return true;
-// }
-
-// String SDStorage::extractKey(const String& line) {
-//   int separatorIndex = line.indexOf('=');
-//   String key = line.substring(0, separatorIndex);
-//   key.trim();
-//   return key;
-// }
-
-// String SDStorage::extractValue(const String& line) {
-//   int separatorIndex = line.indexOf('=');
-//   String value = line.substring(separatorIndex + 1);
-//   value.trim();
-//   return value;
-// }
-
-// String SDStorage::toLine(const String& key, const String& value) {
-//   key.trim();
-//   value.trim();
-//   return key + String(F("=")) + value;
-// }
+bool SDStorage::finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState) {
+  if (autoCommit) {
+    if (success) {
+      return commitTxn(txn, testState);
+    } else {
+      abortTxn(txn, testState);
+      return false;
+    }
+  } else if (success) {
+    return true;
+  } else {
+    return false;
+  }
+}
 
 bool SDStorage::commitTxn(Transaction* txn, void* testState = nullptr) {
   String oldName = txn->getFilename();
@@ -411,6 +464,111 @@ String SDStorage::getTmpFilename(Transaction* txn, const String& filename) {
   return tmpFilename;
 }
 
+String SDStorage::toIndexLine(const String& key, const String& value) {
+  return key + String(F("=")) + value;
+}
+
+String SDStorage::parseIndexKey(const String& line) {
+  int separatorIndex = line.indexOf('=');
+  String key = line.substring(0, separatorIndex);
+  key.trim();
+  return key;
+}
+
+String SDStorage::parseIndexValue(const String& line) {
+  int separatorIndex = line.indexOf('=');
+  String value = line.substring(separatorIndex + 1);
+  value.trim();
+  return value;
+}
+
+bool SDStorage::_pipeFast(const String& line, StreamableManager::DestinationStream* dest) {
+  dest->println(line);
+  return true;
+}
+
+bool SDStorage::idxLookupFilter(const String& line, StreamableManager::DestinationStream* dest, 
+      void* statePtr) {
+  IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
+  if (strcmp(state->key.c_str(), parseIndexKey(line).c_str()) == 0) {
+    state->keyExists = true;
+    state->value = parseIndexValue(line);
+    return false; // stop scanning
+  }
+  return true; // keep going
+}
+
+bool SDStorage::idxUpsertFilter(const String& line, StreamableManager::DestinationStream* dest, 
+      void* statePtr) {
+  IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
+  if (state->didUpsert) {
+    // Upsert already happened. Pipe the rest in fast mode.
+    return _pipeFast(line, dest);
+  }
+  String key = parseIndexKey(line);
+  if (strcmp(state->key.c_str(), key.c_str()) == 0) {
+    // Found matching key - update the value
+    dest->println(toIndexLine(key, state->valueIn));
+    state->didUpsert = true;
+  } else if (strcmp(state->key.c_str(), key.c_str()) < 0 &&               // state->key is before key
+          (state->prevKey.length() == 0                                   // this is the first key OR
+           || strcmp(state->key.c_str(), state->prevKey.c_str()) > 0)) {  // state->key is after prevKey
+      // insert new key/value before line
+      dest->println(toIndexLine(state->key, state->valueIn));
+      dest->println(line);
+      state->didUpsert = true;
+  } else {
+    // state-key comes after this key, so keep going
+    dest->println(line);
+    state->prevKey = key;
+  }
+  return true;
+}
+
+bool SDStorage::idxRemoveFilter(const String& line, StreamableManager::DestinationStream* dest, 
+      void* statePtr) {
+  IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
+  if (state->didRemove) {
+    // Remove already happened. Pipe the rest in fast mode.
+    return _pipeFast(line, dest);
+  }
+  if (strcmp(state->key.c_str(), parseIndexKey(line).c_str()) == 0) {
+    /* skip it */ 
+    state->didRemove = true;
+  } else { dest->println(line); }
+  return true;
+}
+
+bool SDStorage::idxRenameFilter(const String& line, StreamableManager::DestinationStream* dest, 
+      void* statePtr) {
+  IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
+  if (state->didRemove && state->didInsert) {
+    // Rename already happened. Pipe the rest in fast mode.
+    return _pipeFast(line, dest);
+  }
+  String key = parseIndexKey(line);
+  if (strcmp(state->key.c_str(), key.c_str()) == 0) {
+    /* skip the old key */
+    state->didRemove = true;
+  } else if (strcmp(state->newKey.c_str(), key.c_str()) == 0) {
+    // new key already exists - abort
+    return false;
+  } else if (strcmp(state->newKey.c_str(), key.c_str()) < 0 &&               // state->newKey is before key
+          (state->prevKey.length() == 0                                      // this is the first key OR
+           || strcmp(state->newKey.c_str(), state->prevKey.c_str()) > 0)) {  // state->newKey is after prevKey
+      // insert new newKey/value before line
+      dest->println(toIndexLine(state->newKey, state->value));
+      dest->println(line);
+      state->didInsert = true;
+  } else {
+    // state-key comes after this key, so keep going
+    dest->println(line);
+    state->prevKey = key;
+  }
+  return true;
+}
+
+
 /******
  * 
  * The following wrapper methods allow sending a state object to a 
@@ -493,6 +651,59 @@ bool SDStorage::_rename(const String& oldFilename, const String& newFilename, vo
   return _sd.rename(oldFilename, newFilename, testState);
 #else
   return _sd.rename(oldFilename, newFilename);
+#endif
+}
+
+void SDStorage::_writeIndexLine(const String& indexFilename, const String& line, void* testState = nullptr) {
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  dest = _sd.writeIndexFileStream(indexFilename, testState);
+#else
+  File file = _sd.open(indexFilename, FILE_WRITE);
+  dest = &file;
+#endif
+  for (size_t i = 0; i < line.length(); i++) {
+    dest->write(line[i]);
+  }
+  dest->write('\n');
+#if (!defined(__SDSTORAGE_TEST))
+  file.close();
+#endif
+}
+
+void SDStorage::_updateIndex(
+      const String& indexFilename, const String& tmpFilename, 
+      StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
+  Stream* src;
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  src = _sd.readIndexFileStream(indexFilename, testState);
+  dest = _sd.writeIndexFileStream(tmpFilename, testState);
+#else
+  File srcFile = _sd.open(indexFilename, FILE_READ);
+  File destFile = _sd.open(tmpFilename, FILE_WRITE);
+  src = &srcFile;
+  dest = &destFile;
+#endif
+  _streams.pipe(src, dest, filter, statePtr);
+#if (!defined(__SDSTORAGE_TEST))
+  srcFile.close();
+  destFile.close();
+#endif
+}
+
+void SDStorage::_scanIndex(const String &indexFilename, StreamableManager::FilterFunction filter, void* statePtr, 
+      void* testState = nullptr) {
+  Stream* src;
+#if defined(__SDSTORAGE_TEST)
+  src = _sd.readIndexFileStream(indexFilename, testState);
+#else
+  File srcFile = _sd.open(indexFilename, FILE_READ);
+  src = &srcFile;
+#endif
+  _streams.pipe(src, nullptr, filter, statePtr);
+#if (!defined(__SDSTORAGE_TEST))
+  srcFile.close();
 #endif
 }
 

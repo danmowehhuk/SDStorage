@@ -29,6 +29,11 @@ class MockSdFat {
       String renameOldCaptor = String();
       String renameNewCaptor = String();
       bool onRenameReturn = false;
+      String onReadIdxData = String();
+      String readIdxFilenameCaptor = String();
+      StringStream writeIdxDataCaptor;
+      String writeIdxFilenameCaptor = String();
+
     };
 
     MockSdFat(): file1str("foo=bar\nabc=def\n"),
@@ -73,6 +78,19 @@ class MockSdFat {
       TestState* ts = static_cast<TestState*>(testState);
       ts->writeTxnFilenameCaptor = filename;
       return &(ts->writeTxnDataCaptor);
+    };
+
+    Stream* readIndexFileStream(const String& filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      ts->readIdxFilenameCaptor = filename;
+      StringStream* ss = new StringStream(ts->onReadIdxData);
+      return ss;
+    };
+
+    Stream* writeIndexFileStream(const String& filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      ts->writeIdxFilenameCaptor = filename;
+      return &(ts->writeIdxDataCaptor);
     };
 
 };
