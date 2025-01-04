@@ -135,6 +135,63 @@ bool SDStorage::erase(void* testState, const String &filename, Transaction* txn 
 }
 
 /*
+ * Returns prefix matches from the specified index. If more than 10 matches are found,
+ * the results will be in "trie mode" where only the next possible characters are returned.
+ * In "trie mode" a value is only populated if the prefix+character exactly equals a key
+ * in the index. Otherwise, the value is an empty string. For 10 or fewer matches, the 
+ * entire key string is returned, and the value is always populated.
+ */
+void SDStorage::idxPrefixSearch(const String &idxName, SearchResults* results, void* testState = nullptr) {
+  if (idxName.length() == 0) {
+#if (defined(DEBUG))
+    Serial.println(F("SDStorage::_idxScan - idxName cannot be empty"));
+#endif
+    return;
+  }
+  String idxFilename = indexFilename(idxName);
+  if (!_exists(idxFilename, testState)) {
+    // Index has no entries - return empty search results
+  } else {
+    _scanIndex(idxFilename, SDStorage::idxPrefixSearchFilter, results, testState);
+    if (results->trieMode && results->trieResult != nullptr) {
+      // Ooof, sort the trieResult linked list - O(n^2). Fortunately, the number of entries 
+      // should be much smaller than the worst case. Even at n^2, this was determined to be 
+      // much faster than performing n idxLookups to check for matches that should have the
+      // value populated.
+      KeyValue* newHead = nullptr;
+      KeyValue* tail = nullptr;
+
+      // Iterate through the 96 bloom filter bits
+      for (uint8_t wordIndex = 0; wordIndex < 3; wordIndex++) {
+        for (uint8_t bitIndex = 0; bitIndex < 32; bitIndex++) {
+
+          // If the bit is set, move its KeyValue to the next position in the linked list
+          if ((results->trieBloom[wordIndex] & (1UL << bitIndex)) == 1) {
+            char c = static_cast<char>(32 * wordIndex + bitIndex + 32);
+            KeyValue* kv = results->trieResult;
+            KeyValue* prev = nullptr;
+            while (kv && !kv->key.equals(String(c))) { // Find the kv with key=c
+              prev = kv;
+              kv = kv->next;
+            }
+            prev->next = kv->next;                     // Remove it from the old linked list
+            kv->next = nullptr;
+            if (newHead == nullptr) newHead = kv;      // Append it to the new linked list
+            if (tail == nullptr) {
+              tail = kv;
+            } else {
+              tail->next = kv;
+              tail = tail->next;
+            }
+          }
+        }
+      }
+      results->trieResult = newHead;                   // Replace with the sorted list
+    }
+  }
+}
+
+/*
  * Scans the index looking for state->key and populating the state->keyExists and state->value
  * fields on the IdxScanCapture object passed in. Scanning stops when the key is found.
  */
@@ -568,6 +625,68 @@ bool SDStorage::idxRenameFilter(const String& line, StreamableManager::Destinati
   return true;
 }
 
+bool SDStorage::idxPrefixSearchFilter(const String& line, StreamableManager::DestinationStream* dest, 
+      void* statePtr) {
+  SearchResults* results = static_cast<SearchResults*>(statePtr);
+  String key = parseIndexKey(line);
+  String prefix = results->searchPrefix;
+  if (prefix.length() == 0 || key.startsWith(prefix)) {
+    String value = parseIndexValue(line);
+
+    // Handle up to 10 matches, then switch to trie mode
+    if (results->matchCount <= 10) {
+      KeyValue* match = new KeyValue(key, value);
+      appendMatchResult(results, match);
+      results->matchCount++;
+    } else {
+      results->trieMode = true;
+    }
+
+    // Populate the trieResult and bloom filter
+    uint8_t pos = prefix.length();
+    if (key.length() > prefix.length()) {
+      char c = key[pos];
+      if (c >= 32 && c <= 122) { // Ensure it's an acceptable ASCII character
+        uint8_t index = c - 32;  // Map ASCII to 0-90
+        uint8_t wordIndex = index / 32; // Determine which 32-bit word to use
+        uint8_t bitIndex = index % 32; // Determine the bit within the word
+        if ((results->trieBloom[wordIndex] & (1UL << bitIndex)) == 0) { // Check if this char is new
+          results->trieBloom[wordIndex] |= (1UL << bitIndex);  // Mark this char as seen
+          // Add it to the trieResult
+          KeyValue* kv;
+          if (key.equals(prefix + c)) {
+            kv = new KeyValue(String(c), value);
+          } else {
+            kv = new KeyValue(String(c), "");
+          }
+          appendTrieResult(results, kv);
+        }
+      }
+    }
+  }
+  return true;
+}
+
+void SDStorage::_appendKeyValue(KeyValue* head, KeyValue* result) {
+  while (head->next != nullptr) head = head->next;
+  head->next = result;
+}
+
+void SDStorage::appendMatchResult(SearchResults* sr, KeyValue* result) {
+  if (sr->matchResult == nullptr) {
+    sr->matchResult = result;
+  } else {
+    _appendKeyValue(sr->matchResult, result);
+  }
+}
+
+void SDStorage::appendTrieResult(SearchResults* sr, KeyValue* result) {
+  if (sr->trieResult == nullptr) {
+    sr->trieResult = result;
+  } else {
+    _appendKeyValue(sr->trieResult, result);
+  }
+}
 
 /******
  * 

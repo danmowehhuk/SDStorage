@@ -62,8 +62,37 @@ class SDStorage {
     bool erase(const String &filename, Transaction* txn = nullptr);
     bool erase(void* testState, const String& filename, Transaction* txn = nullptr);
 
+    // INDEX SEARCH RESULTS
+    struct KeyValue {
+      const String& key;
+      const String& value;
+      KeyValue* next = nullptr;
+      KeyValue(const String& key, const String& value): key(key), value(value) {};
+      ~KeyValue() {
+        KeyValue* current = this->next;
+        while (current != nullptr) {
+          KeyValue* toDelete = current;
+          current = current->next;
+          delete toDelete;
+        }
+      }
+    };
+    struct SearchResults {
+      const String& searchPrefix;
+      bool trieMode = false;
+      uint32_t trieBloom[3] = {0};
+      uint8_t matchCount = 0;
+      KeyValue* matchResult = nullptr;
+      KeyValue* trieResult = nullptr;
+      SearchResults(const String& searchPrefix): searchPrefix(searchPrefix) {};
+      ~SearchResults() {
+        if (matchResult) delete matchResult;
+        if (trieResult) delete trieResult;
+      }
+    };
+
     // INDEX OPERATIONS
-    // bool idxPrefixSearch(const String &idxName, const String &prefix); //, IndexEntry<T>* resultHead);
+    void idxPrefixSearch(const String &idxName, SearchResults* results, void* testState = nullptr);
     bool idxHasKey(const String &idxName, const String &key, void* testState = nullptr);
     String idxLookup(const String &idxName, const String &key, void* testState = nullptr);
     bool idxUpsert(const String &idxName, const String &key, const String &value, Transaction* txn = nullptr);
@@ -142,10 +171,14 @@ class SDStorage {
     static String toIndexLine(const String& key, const String& value);
     static String parseIndexKey(const String& line);
     static String parseIndexValue(const String& line);
+    static void _appendKeyValue(KeyValue* head, KeyValue* result);
+    static void appendMatchResult(SearchResults* sr, KeyValue* result);
+    static void appendTrieResult(SearchResults* sr, KeyValue* result);
     static bool idxLookupFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
     static bool idxUpsertFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
     static bool idxRemoveFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
     static bool idxRenameFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxPrefixSearchFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
 
     /*
      * Wrap the underlying calls to _sd so that a state capture object

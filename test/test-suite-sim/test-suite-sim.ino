@@ -353,6 +353,29 @@ void testIdxRenameKey(TestInvocation *t) {
   }
 }
 
+void testIdxPrefixSearchNoResults(TestInvocation *t) {
+  t->name = STR("Index prefix search with no results");
+  MockSdFat::TestState ts;
+  do {
+    ts.onExistsReturn = false; // index file exists
+    SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("a"));
+    sdStorage.idxPrefixSearch(STR("myIndex"), sr, &ts);
+    if (sr->matchResult) {
+      t->message = STR("Should have found no matches");
+      break;
+    }
+    if (sr->trieResult) {
+      t->message = STR("Trie results should be empty");
+      break;
+    }
+    if (sr->trieMode) {
+      t->message = STR("Should not have switched to trie mode");
+      break;
+    }
+    t->success = true;
+  } while (false);
+}
+
 
 bool printAndCheckResult(TestInvocation* t) {
   uint8_t nameWidth = 48;
@@ -407,7 +430,8 @@ void setup() {
     testIdxRemove,
     testIdxLookup,
     testIdxHasKey,
-    testIdxRenameKey
+    testIdxRenameKey,
+    testIdxPrefixSearchNoResults
 
   };
 
