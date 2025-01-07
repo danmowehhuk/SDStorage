@@ -16,6 +16,8 @@ static const char _SDSTORAGE_IDX_DIR[]           PROGMEM = "~IDX";
 static const char _SDSTORAGE_INDEX_EXTSN[]       PROGMEM = ".idx";
 static const char _SDSTORAGE_TOMBSTONE[]         PROGMEM = "{TOMBSTONE}";
 
+int freeMemory(); // forward declaration
+
 class SDStorage {
 
   public:
@@ -64,8 +66,8 @@ class SDStorage {
 
     // INDEX SEARCH RESULTS
     struct KeyValue {
-      const String& key;
-      const String& value;
+      String key;
+      String value;
       KeyValue* next = nullptr;
       KeyValue(const String& key, const String& value): key(key), value(value) {};
       ~KeyValue() {
@@ -73,12 +75,13 @@ class SDStorage {
         while (current != nullptr) {
           KeyValue* toDelete = current;
           current = current->next;
+          toDelete->next = nullptr;
           delete toDelete;
         }
       }
     };
     struct SearchResults {
-      const String& searchPrefix;
+      String searchPrefix;
       bool trieMode = false;
       uint32_t trieBloom[3] = {0};
       uint8_t matchCount = 0;
@@ -86,8 +89,12 @@ class SDStorage {
       KeyValue* trieResult = nullptr;
       SearchResults(const String& searchPrefix): searchPrefix(searchPrefix) {};
       ~SearchResults() {
-        if (matchResult) delete matchResult;
-        if (trieResult) delete trieResult;
+        if (matchResult) {
+          delete matchResult;
+        }
+        if (trieResult) {
+          delete trieResult;
+        }
       }
     };
 

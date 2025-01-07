@@ -10,15 +10,17 @@
  *    "/<rootdir>/foo.txt"  -->   "/<rootdir>/foo.txt"
  */
 String SDStorage::realFilename(const String& filename) {
-  if (filename.startsWith(_rootDir + String(F("/")))) return filename;
-  String resolvedName;
-  bool addSlash = false;
-  if (!filename.startsWith(String(F("/")))) {
-    addSlash = true;
+  if (filename.startsWith(_rootDir + "/")) {
+    return filename;
   }
-  resolvedName.reserve(_rootDir.length() + (addSlash ? 1 : 0) + filename.length());
-  resolvedName = _rootDir + (addSlash ? String(F("/")):String()) + filename;
-  return resolvedName;
+  size_t bufferSize = _rootDir.length() + filename.length() + 2; // +2 for possible "/" and null terminator
+  char resolvedName[bufferSize]; // Use a stack-based buffer for efficiency
+  if (filename.startsWith("/")) {
+    snprintf(resolvedName, bufferSize, "%s%s", _rootDir.c_str(), filename.c_str());
+  } else {
+    snprintf(resolvedName, bufferSize, "%s/%s", _rootDir.c_str(), filename.c_str());
+  }
+  return String(resolvedName);
 }
 
 /*
@@ -28,14 +30,14 @@ bool SDStorage::begin(void* testState = nullptr) {
   _rootDir.trim();
   bool sdInit = false;
   do {
-    if (!_sd.begin(_sdCsPin)) break;
-    if (_rootDir.indexOf('/') != -1) break; // no slashes in root dir
-    _rootDir = String(F("/")) + _rootDir;
-    if (!_exists(_rootDir, testState) && !_mkdir(_rootDir, testState)) break;
-    _idxDir = realFilename(reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_IDX_DIR));
-    if (!_exists(_idxDir, testState) && !_mkdir(_idxDir, testState)) break;
-    _workDir = realFilename(reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_WORK_DIR));
-    if (!_exists(_workDir, testState) && !_mkdir(_workDir, testState)) break;
+   if (!_rootDir.startsWith(String(F("/")))) _rootDir = String(F("/")) + _rootDir;
+   if (_rootDir.substring(1).indexOf('/') != -1) break; // no other slashes in root dir
+   if (!_sd.begin(_sdCsPin)) break;
+   if (!_exists(_rootDir, testState) && !_mkdir(_rootDir, testState)) break;
+   _idxDir = realFilename(reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_IDX_DIR));
+   if (!_exists(_idxDir, testState) && !_mkdir(_idxDir, testState)) break;
+   _workDir = realFilename(reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_WORK_DIR));
+   if (!_exists(_workDir, testState) && !_mkdir(_workDir, testState)) break;
     if (!fsck()) {
 #if defined(DEBUG)
       Serial.println(String(F("SDStorage repair failed")));
@@ -106,8 +108,9 @@ bool SDStorage::save(void* testState, const String &filename, StreamableDTO* dto
   String tmpFilename = getTmpFilename(txn, resolvedFilename);
   if (tmpFilename.length() == 0) return false;
   _writeToStream(tmpFilename, dto, testState);
-  if (implicitTx) return commitTxn(txn, testState);
-  return true;
+  bool result = true;
+  if (implicitTx) result = commitTxn(txn, testState);
+  return result;
 }
 
 /*
@@ -144,7 +147,7 @@ bool SDStorage::erase(void* testState, const String &filename, Transaction* txn 
 void SDStorage::idxPrefixSearch(const String &idxName, SearchResults* results, void* testState = nullptr) {
   if (idxName.length() == 0) {
 #if (defined(DEBUG))
-    Serial.println(F("SDStorage::_idxScan - idxName cannot be empty"));
+    Serial.println(F("SDStorage::idxPrefixSearch - idxName cannot be empty"));
 #endif
     return;
   }
@@ -153,40 +156,56 @@ void SDStorage::idxPrefixSearch(const String &idxName, SearchResults* results, v
     // Index has no entries - return empty search results
   } else {
     _scanIndex(idxFilename, SDStorage::idxPrefixSearchFilter, results, testState);
-    if (results->trieMode && results->trieResult != nullptr) {
-      // Ooof, sort the trieResult linked list - O(n^2). Fortunately, the number of entries 
-      // should be much smaller than the worst case. Even at n^2, this was determined to be 
-      // much faster than performing n idxLookups to check for matches that should have the
-      // value populated.
-      KeyValue* newHead = nullptr;
-      KeyValue* tail = nullptr;
+    if (results->trieMode) {
+      // clean up the partial matchResult
+      if (results->matchResult) {
+        KeyValue* toDelete = results->matchResult;
+        results->matchResult = nullptr;
+        delete toDelete;
+      }
 
-      // Iterate through the 96 bloom filter bits
-      for (uint8_t wordIndex = 0; wordIndex < 3; wordIndex++) {
-        for (uint8_t bitIndex = 0; bitIndex < 32; bitIndex++) {
+      if (results->trieResult != nullptr) {
+        // Ooof, sort the trieResult linked list - O(n^2). Fortunately, the number of entries 
+        // should be much smaller than the worst case. Even at n^2, this was determined to be 
+        // much faster than performing n idxLookups to check for matches that should have the
+        // value populated.
+        KeyValue* newHead = nullptr;
+        KeyValue* tail = nullptr;
 
-          // If the bit is set, move its KeyValue to the next position in the linked list
-          if ((results->trieBloom[wordIndex] & (1UL << bitIndex)) == 1) {
-            char c = static_cast<char>(32 * wordIndex + bitIndex + 32);
-            KeyValue* kv = results->trieResult;
-            KeyValue* prev = nullptr;
-            while (kv && !kv->key.equals(String(c))) { // Find the kv with key=c
-              prev = kv;
-              kv = kv->next;
-            }
-            prev->next = kv->next;                     // Remove it from the old linked list
-            kv->next = nullptr;
-            if (newHead == nullptr) newHead = kv;      // Append it to the new linked list
-            if (tail == nullptr) {
-              tail = kv;
-            } else {
-              tail->next = kv;
-              tail = tail->next;
+        // Iterate through the 96 bloom filter bits
+        for (uint8_t wordIndex = 0; wordIndex < 3; wordIndex++) {
+          for (uint8_t bitIndex = 0; bitIndex < 32; bitIndex++) {
+
+            // If the bit is set, move its KeyValue to the next position in the linked list
+            if ((results->trieBloom[wordIndex] & (1UL << bitIndex)) == 1) {
+              char c = static_cast<char>(32 * wordIndex + bitIndex + 32);
+              KeyValue* kv = results->trieResult;
+              KeyValue* prev = nullptr;
+              while (kv && !kv->key.equals(String(c))) { // Find the kv with key=c
+                prev = kv;
+                kv = kv->next;
+              }
+              prev->next = kv->next;                     // Remove it from the old linked list
+              kv->next = nullptr;
+              if (newHead == nullptr) newHead = kv;      // Append it to the new linked list
+              if (tail == nullptr) {
+                tail = kv;
+              } else {
+                tail->next = kv;
+                tail = tail->next;
+              }
             }
           }
         }
+        results->trieResult = newHead;                   // Replace with the sorted list
       }
-      results->trieResult = newHead;                   // Replace with the sorted list
+    } else { 
+      // Not using trie mode, so clean up the partial trie result
+      if (results->trieResult) {
+        KeyValue* toDelete = results->trieResult;
+        results->trieResult = nullptr;
+        delete toDelete;
+      }
     }
   }
 }
@@ -630,9 +649,14 @@ bool SDStorage::idxPrefixSearchFilter(const String& line, StreamableManager::Des
   SearchResults* results = static_cast<SearchResults*>(statePtr);
   String key = parseIndexKey(line);
   String prefix = results->searchPrefix;
+
+  if (prefix.length() > 0 && !key.startsWith(prefix) && strcmp(key.c_str(), prefix.c_str()) > 0) {
+    // Indexes are sorted, so if key comes after prefix, there's no
+    // point continuing to scan the index
+    return false;
+  }
   if (prefix.length() == 0 || key.startsWith(prefix)) {
     String value = parseIndexValue(line);
-
     // Handle up to 10 matches, then switch to trie mode
     if (results->matchCount <= 10) {
       KeyValue* match = new KeyValue(key, value);
@@ -722,7 +746,8 @@ bool SDStorage::_loadFromStream(const String& filename, StreamableDTO* dto, void
 #endif
   bool result = _streams.load(src, dto);  
 #if defined(__SDSTORAGE_TEST)
-  delete src;
+  StringStream* ss = static_cast<StringStream*>(src);
+  delete ss;
 #else
   file.close();
 #endif
@@ -805,7 +830,10 @@ void SDStorage::_updateIndex(
   dest = &destFile;
 #endif
   _streams.pipe(src, dest, filter, statePtr);
-#if (!defined(__SDSTORAGE_TEST))
+#if defined(__SDSTORAGE_TEST)
+  StringStream* sss = static_cast<StringStream*>(src);
+  delete sss;
+#else
   srcFile.close();
   destFile.close();
 #endif
@@ -821,7 +849,10 @@ void SDStorage::_scanIndex(const String &indexFilename, StreamableManager::Filte
   src = &srcFile;
 #endif
   _streams.pipe(src, nullptr, filter, statePtr);
-#if (!defined(__SDSTORAGE_TEST))
+#if defined(__SDSTORAGE_TEST)
+  StringStream* ss = static_cast<StringStream*>(src);
+  delete ss;
+#else
   srcFile.close();
 #endif
 }

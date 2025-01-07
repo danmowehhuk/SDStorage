@@ -4,15 +4,26 @@
 
 #define STR(s) String(F(s))
 
-
 struct TestInvocation {
   String name = String();
   bool success = false;
   String message = String();
 };
 
+extern char __heap_start, *__brkval;
+
+int freeMemory() {
+    char top;
+    if (__brkval == 0) {
+        return &top - &__heap_start;
+    } else {
+        return &top - __brkval;
+    }
+}
+
 SDStorage sdStorage(12, reinterpret_cast<const __FlashStringHelper *>(_MOCK_TESTROOT));
 SDStorageTestHelper helper;
+StreamableManager strManager;
 
 void testBegin(TestInvocation* t) {
   t->name = STR("SDStorage initialization");
@@ -53,9 +64,9 @@ void testLoadFile(TestInvocation* t) {
   t->name = STR("Load a mock file from a stream");
   MockSdFat::TestState ts;
   ts.onExistsReturn = true;
-  ts.onLoadData = "foo=bar\n";
+  ts.onLoadData = String("foo=bar\n");
+  StreamableDTO dto;
   do {
-    StreamableDTO dto;
     if (!sdStorage.load(STR("myFile.dat"), &dto, &ts)) {
       t->message = STR("Load failed");
       break;
@@ -73,6 +84,7 @@ void testSaveIndividualFile(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onRenameReturn = true;
   ts.onRemoveReturn = true;
+
   StreamableDTO dto;
   dto.put("def", "ghi");
   do {
@@ -353,12 +365,25 @@ void testIdxRenameKey(TestInvocation *t) {
   }
 }
 
+void testIdxSearchResults(TestInvocation *t) {
+  t->name = STR("SearchResults struct");
+  SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("a"));
+  do {
+    if (!sr->searchPrefix.equals("a")) {
+      t->message = STR("Expected 'a' but got '") + sr->searchPrefix + STR("'");
+      break;
+    }
+    t->success = true;
+  } while (false);
+  delete sr;
+}
+
 void testIdxPrefixSearchNoResults(TestInvocation *t) {
   t->name = STR("Index prefix search with no results");
   MockSdFat::TestState ts;
+  ts.onExistsReturn = false; // index file exists
+  SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("a"));
   do {
-    ts.onExistsReturn = false; // index file exists
-    SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("a"));
     sdStorage.idxPrefixSearch(STR("myIndex"), sr, &ts);
     if (sr->matchResult) {
       t->message = STR("Should have found no matches");
@@ -374,6 +399,63 @@ void testIdxPrefixSearchNoResults(TestInvocation *t) {
     }
     t->success = true;
   } while (false);
+  delete sr;
+}
+
+void testIdxPrefixSearchUnder10Matches(TestInvocation *t) {
+  t->name = STR("Index prefix search with <10 matches");
+  MockSdFat::TestState ts;
+  ts.onExistsReturn = true; // index file exists
+  ts.onReadIdxData = STR("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob\n");
+  SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("e"));
+  do {
+    if (!sr->searchPrefix.equals("e")) {
+      t->message = STR("Wrong search prefix passed");
+      break;
+    }
+    sdStorage.idxPrefixSearch(STR("myIndex"), sr, &ts);
+    if (!sr->searchPrefix.equals("e")) {
+      t->message = STR("Search prefix changed!");
+      break;
+    }
+    if (sr->trieMode) {
+      t->message = STR("Should not have switched to trie mode");
+      break;
+    }
+    if (!sr->matchResult) {
+      t->message = STR("matchResult should be populated");
+      break;
+    }
+    if (sr->trieResult != nullptr) {
+      t->message = STR("trieResult should not be populated");
+      break;
+    }
+    String keys[] = { "ear", "egg", "era", "erf" };
+    String values[] = { "3", "45", "12", "20" };
+    SDStorage::KeyValue* kv = sr->matchResult;
+
+    for (uint8_t i = 0; i < 4; i++) {
+      if (!kv) {
+        t->message = STR("Result should not be nullptr at index ") + String(i);
+        break;
+      }
+      if (!kv->key.equals(keys[i])) {
+        t->message = STR("Incorrect key result at index ") + String(i);
+        break;
+      }
+      if (!kv->value.equals(values[i])) {
+        t->message = STR("Incorrect value result at index ") + String(i);
+        break;
+      }
+      kv = kv->next;
+    }
+    if (kv) {
+      t->message = STR("Unexpected extra results");
+      break;
+    }
+    t->success = true;
+  } while (false);
+  delete sr;
 }
 
 
@@ -431,13 +513,19 @@ void setup() {
     testIdxLookup,
     testIdxHasKey,
     testIdxRenameKey,
-    testIdxPrefixSearchNoResults
+    testIdxSearchResults,
+    testIdxPrefixSearchNoResults,
+    testIdxPrefixSearchUnder10Matches
 
   };
 
   bool success = true;
   for (int i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
-    success &= invokeTest(tests[i]);
+    // for (uint8_t j = 0; j < 20; j++) {
+    // Serial.println("Memory before test: "+String(freeMemory()));
+      success &= invokeTest(tests[i]);
+    // Serial.println("Memory after test: "+String(freeMemory()));
+    // }
   }
   if (success) {
     Serial.println(F("All tests passed!"));

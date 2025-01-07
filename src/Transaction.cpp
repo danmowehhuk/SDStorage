@@ -16,17 +16,20 @@ void Transaction::add(const String &filename, const String &workDir) {
     }
 #endif
   }
-//  Serial.println("LOCK   == " + filename);
+  // Serial.println("LOCK   == " + filename);
   _locks->putEmpty(filename);
-  String tmpFilename = workDir + String(F("/")) + String(_idSeq++) 
-        + reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_TXN_TMP_EXTSN);
-  put(filename, tmpFilename);
+
+  size_t bufferSize = workDir.length() + 16; // for /<seq_no>.tmp
+  char tmpFilename[bufferSize];
+  snprintf(tmpFilename, bufferSize, "%s/%s%s", workDir.c_str(), 
+        String(_idSeq++).c_str(), reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_TXN_TMP_EXTSN));
+  put(filename, String(tmpFilename));
 }
 
 void Transaction::releaseLocks() {
   auto unlockFunction = [](const String& filename, const String& tmpFilename, void* capture) -> bool {
     bool result = _locks->remove(filename);
-//    Serial.println("UNLOCK == " + filename + " (" + String(result) + ")");
+    // Serial.println("UNLOCK == " + filename + " (" + String(result) + ")");
     return result;
   };
   processEntries(unlockFunction, nullptr);

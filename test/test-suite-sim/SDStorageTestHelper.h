@@ -1,6 +1,8 @@
 #ifndef _SDStorageTestHelper_h
 #define _SDStorageTestHelper_h
 
+#include "MockSdFat.h"
+
 
 class SDStorageTestHelper {
 

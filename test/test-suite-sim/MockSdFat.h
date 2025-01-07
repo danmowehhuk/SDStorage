@@ -7,12 +7,12 @@
 
 static const char _MOCK_TESTROOT[] PROGMEM = "TESTROOT";
 
+int freeMemory(); // forward declaration
+
 class MockSdFat {
 
   private:
     MockSdFat(MockSdFat &t) = delete;
-    String file1str;
-    StringStream file1;
 
   public:
     struct TestState {
@@ -33,11 +33,9 @@ class MockSdFat {
       String readIdxFilenameCaptor = String();
       StringStream writeIdxDataCaptor;
       String writeIdxFilenameCaptor = String();
-
     };
 
-    MockSdFat(): file1str("foo=bar\nabc=def\n"),
-      file1(file1str) {};
+    MockSdFat() {};
 
     bool begin(uint8_t sdCsPin) { return true; };
     bool exists(const String& filename, void* testState) {
