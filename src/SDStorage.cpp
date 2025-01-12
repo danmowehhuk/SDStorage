@@ -103,6 +103,7 @@ bool SDStorage::save(void* testState, const String &filename, StreamableDTO* dto
   if (txn == nullptr) {
     // make an implicit, single-file transaction
     txn = beginTxn(testState, resolvedFilename);
+    if (!txn) return false;
     implicitTx = true;
   }
   String tmpFilename = getTmpFilename(txn, resolvedFilename);
@@ -162,42 +163,6 @@ void SDStorage::idxPrefixSearch(const String &idxName, SearchResults* results, v
         KeyValue* toDelete = results->matchResult;
         results->matchResult = nullptr;
         delete toDelete;
-      }
-
-      if (results->trieResult != nullptr) {
-        // Ooof, sort the trieResult linked list - O(n^2). Fortunately, the number of entries 
-        // should be much smaller than the worst case. Even at n^2, this was determined to be 
-        // much faster than performing n idxLookups to check for matches that should have the
-        // value populated.
-        KeyValue* newHead = nullptr;
-        KeyValue* tail = nullptr;
-
-        // Iterate through the 96 bloom filter bits
-        for (uint8_t wordIndex = 0; wordIndex < 3; wordIndex++) {
-          for (uint8_t bitIndex = 0; bitIndex < 32; bitIndex++) {
-
-            // If the bit is set, move its KeyValue to the next position in the linked list
-            if ((results->trieBloom[wordIndex] & (1UL << bitIndex)) == 1) {
-              char c = static_cast<char>(32 * wordIndex + bitIndex + 32);
-              KeyValue* kv = results->trieResult;
-              KeyValue* prev = nullptr;
-              while (kv && !kv->key.equals(String(c))) { // Find the kv with key=c
-                prev = kv;
-                kv = kv->next;
-              }
-              prev->next = kv->next;                     // Remove it from the old linked list
-              kv->next = nullptr;
-              if (newHead == nullptr) newHead = kv;      // Append it to the new linked list
-              if (tail == nullptr) {
-                tail = kv;
-              } else {
-                tail->next = kv;
-                tail = tail->next;
-              }
-            }
-          }
-        }
-        results->trieResult = newHead;                   // Replace with the sorted list
       }
     } else { 
       // Not using trie mode, so clean up the partial trie result
@@ -270,6 +235,7 @@ bool SDStorage::idxUpsert(void* testState, const String &idxName, const String &
   if (txn == nullptr) {
     // make an implicit, single-file transaction
     txn = beginTxn(testState, idxFilename);
+    if (!txn) return false;
     implicitTx = true;
   }
   IdxScanCapture state(key, value);
@@ -311,6 +277,7 @@ bool SDStorage::idxRemove(void* testState, const String &idxName, const String &
   if (txn == nullptr) {
     // make an implicit, single-file transaction
     txn = beginTxn(testState, idxFilename);
+    if (!txn) return false;
     implicitTx = true;
   }
   IdxScanCapture state(key);
@@ -348,6 +315,7 @@ bool SDStorage::idxRename(void* testState, const String &idxName,
   if (txn == nullptr) {
     // make an implicit, single-file transaction
     txn = beginTxn(testState, idxFilename);
+    if (!txn) return false;
     implicitTx = true;
   }
   IdxScanCapture state(oldKey, newKey, true);
@@ -397,14 +365,14 @@ bool SDStorage::commitTxn(Transaction* txn, void* testState = nullptr) {
     commitErr = false;
   } while (false);
   if (commitErr) {
+    /*
+     * Something failed that should not have failed. This means the files might
+     * be in an inconsistent state. Call the supplied errFunction.
+     */
 #if defined(DEBUG)
-    Serial.println(String(F("commitTxn failed")));
+    Serial.println(String(F("ERROR: SDStorage::commitTxn")));
 #endif
-    if (!abortTxn(txn, testState)) {
-#if defined(DEBUG)
-      Serial.println(String(F("abortTxn ALSO failed!")));
-#endif
-    }
+    if (_errFunction != nullptr) _errFunction();
     return false;
   }
   return true;
@@ -429,10 +397,16 @@ bool SDStorage::abortTxn(Transaction* txn, void* testState = nullptr) {
   };
   txn->processEntries(cleanupFunction, &capture);
   if (!capture.success) {
-    return false;
+    /*
+     * At least one tmp file was not cleaned up. This should not cause
+     * problems. They should be cleaned up by fsck() on the next startup.
+     */
+#if defined(DEBUG)
+    Serial.println(String(F("SDStorage abortTxn failed")));
+#endif
   }
-  _cleanupTxn(txn, testState);
-  return true;
+  _cleanupTxn(txn, testState); // releases locks
+  return capture.success;
 }
 
 bool SDStorage::_applyChanges(Transaction* txn, void* testState = nullptr) {
@@ -490,37 +464,66 @@ void SDStorage::_cleanupTxn(Transaction* txn, void* testState = nullptr) {
 }
 
 bool SDStorage::fsck() {
-//   File workDirFile = _sd.open(workDir());
-//   if (!workDirFile) return false;
-//   if (!workDirFile.isDirectory()) return false;
-//   while (true) {
-//     File file = workDirFile.openNextFile();
-//     if (!file) break; // no more files
-//     char buffer[64];
-//     file.getName(buffer, sizeof(buffer));
-//     String filename = String(buffer);
-//     if (filename.endsWith(StreamableDTO::pgmToString(TransactionStrings::COMMIT_EXTSN))) {
-//       // Leftover commit file needs to be applied
-//       Transaction* txn = new Transaction(workDir());
-//       _streams.load(&file, txn);
-//       file.close();
-//       txn->setCommitted();
-//       if (!commitTxn(txn)) return false;
-//     }
-//   }
+#if (!defined(__SDSTORAGE_TEST))
+  File workDirFile = _sd.open(_workDir);
+  if (!workDirFile) return false;
+  if (!workDirFile.isDirectory()) return false;
+  String commitExtension = reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  while (true) {
+    File file = workDirFile.openNextFile();
+    if (!file) break; // no more files
+    char buffer[64];
+    file.getName(buffer, sizeof(buffer));
+    String filename = String(buffer);
+    if (filename.endsWith(commitExtension)) {
+      // Leftover commit file needs to be applied
+      Transaction* txn = new Transaction(_workDir);
+      _streams.load(&file, txn);
+      file.close();
+      bool commitErr = true;
+      do {
+        if (!_applyChanges(txn)) break;
+        _cleanupTxn(txn);
+        commitErr = false;
+      } while (false);
+      if (commitErr) {
+        /*
+         * Something failed that should not have failed. This means the files might
+         * be in an inconsistent state. Call the supplied errFunction.
+         */
+#if defined(DEBUG)
+        Serial.println(String(F("ERROR: SDStorage::fsck() - Failed to apply commit ")) + filename);
+#endif
+        if (_errFunction != nullptr) _errFunction();
+        return false;
+      }
+    }
+  }
 
   // All commits successfully applied, so delete all remaining files.
   // This effectively aborts any incomplete transactions.
-//   workDirFile.close();
-//   workDirFile = _sd.open(workDir());
-//   while (true) {
-//     File file = workDirFile.openNextFile();
-//     if (!file) break; // no more files
-//     char buffer[64];
-//     file.getName(buffer, sizeof(buffer));
-//     String filename = String(buffer);
-//     if (!_sd.remove(filename)) return false;
-//   }
+  workDirFile.close();
+  workDirFile = _sd.open(_workDir);
+  while (true) {
+    File file = workDirFile.openNextFile();
+    if (!file) break; // no more files
+    char buffer[64];
+    file.getName(buffer, sizeof(buffer));
+    String filename = String(buffer);
+    if (!_sd.remove(filename)) {
+      /*
+       * Cleanup failed, but any outstanding commits were applied, so nothing
+       * is in an inconsistent state, although the workdir needs to be cleaned up
+       * to prevent tmp file name collisions.
+       */
+#if defined(DEBUG)
+      Serial.println(String(F("ERROR: SDStorage::fsck() - Failed to clean up work dir ")) + _workDir);
+#endif
+      if (_errFunction != nullptr) _errFunction();
+      return false;
+    }
+  }
+#endif
   return true;
 }
 
@@ -538,6 +541,49 @@ String SDStorage::getTmpFilename(Transaction* txn, const String& filename) {
     return String();
   }
   return tmpFilename;
+}
+
+bool SDStorage::isValidFAT16Filename(const String& filename) {
+  if (filename.length() == 0) return false;
+
+  // Check for more than one dot or invalid length
+  int dotIndex = filename.indexOf('.');
+  if (dotIndex == -1) {
+      // No extension
+      if (filename.length() > 8) return false;
+  } else {
+      // With extension
+      String namePart = filename.substring(0, dotIndex);
+      String extPart = filename.substring(dotIndex + 1);
+
+      if (namePart.length() == 0 || namePart.length() > 8) return false;
+      if (extPart.length() == 0 || extPart.length() > 3) return false;
+  }
+
+  // Check each character
+  for (int i = 0; i < filename.length(); i++) {
+      char c = filename[i];
+      if (!((c >= 'A' && c <= 'Z') ||  // Uppercase letters
+            (c >= 'a' && c <= 'z') ||  // Lowercase is ok too
+            (c >= '0' && c <= '9') ||  // Numbers
+            (c == '!' || c == '#' || c == '$' || c == '%' || c == '&' ||
+             c == '\'' || c == '(' || c == ')' || c == '-' || c == '@' ||
+             c == '^' || c == '_' || c == '`' || c == '{' || c == '}' ||
+             c == '~' || (c == '.' && i != 0 && i != filename.length() - 1)))) {
+          return false;
+      }
+  }
+  return true;
+}
+
+String SDStorage::getPathFromFilename(const String& filename) {
+  int lastSlashIndex = filename.lastIndexOf('/');
+  return filename.substring(0, lastSlashIndex);
+}
+
+String SDStorage::getFilenameFromFullName(const String& filename) {
+  int lastSlashIndex = filename.lastIndexOf('/');
+  return filename.substring(lastSlashIndex + 1);
 }
 
 String SDStorage::toIndexLine(const String& key, const String& value) {
@@ -658,7 +704,7 @@ bool SDStorage::idxPrefixSearchFilter(const String& line, StreamableManager::Des
   if (prefix.length() == 0 || key.startsWith(prefix)) {
     String value = parseIndexValue(line);
     // Handle up to 10 matches, then switch to trie mode
-    if (results->matchCount <= 10) {
+    if (results->matchCount < 10) {
       KeyValue* match = new KeyValue(key, value);
       appendMatchResult(results, match);
       results->matchCount++;
@@ -726,6 +772,18 @@ bool SDStorage::_exists(const String& filename, void* testState = nullptr) {
 #else
   return _sd.exists(filename);
 #endif
+}
+
+bool SDStorage::_isDir(const String& filename, void* testState = nullptr) {
+  bool isDir = false;
+#if defined(__SDSTORAGE_TEST)
+  isDir = _sd.isDirectory(filename, testState);
+#else
+  File file = _sd.open(filename);
+  isDir = file.isDirectory();
+  file.close();
+#endif
+  return isDir;
 }
 
 bool SDStorage::_mkdir(const String& filename, void* testState = nullptr) {

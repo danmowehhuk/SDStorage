@@ -21,8 +21,22 @@ int freeMemory(); // forward declaration
 class SDStorage {
 
   public:
-    SDStorage(uint8_t sdCsPin, const String &rootDir): 
-          _sdCsPin(sdCsPin), _rootDir(rootDir) {};
+    /*
+     * sdCsPin - SPI chip select pin for SD card
+     * rootDir - A base directory for all SDStorage operations; e.g. "/ARDUINO"
+     * errFunction - A function to call when an unrecoverable error occurs, so 
+     *        the caller may display a message and/or halt the system. An 
+     *        example of an unrecoverable error would be if a transaction
+     *        commit or abort fails for some reason (like the card was yanked)
+     *        and to continue would leave files in an inconsistent state.
+     *
+     * Note that if a transaction is not completed because of power loss,
+     * it will be cleaned up the next time begin() is called, which will perform
+     * a cleanup of the work directory, applying any finalized transactions
+     * and rolling back any others.
+     */
+    SDStorage(uint8_t sdCsPin, const String &rootDir, void (*errFunction)() = nullptr): 
+          _sdCsPin(sdCsPin), _rootDir(rootDir), _errFunction(errFunction) {};
     
     /*
      * Initialize the SDStorage system, creating the root directory and 
@@ -122,6 +136,7 @@ class SDStorage {
     SDStorage();
     SDStorage(SDStorage &t);
     uint8_t _sdCsPin;
+    void (*_errFunction)() = nullptr;
     StreamableManager _streams;
     String _rootDir;
     String _workDir = String();
@@ -141,6 +156,9 @@ class SDStorage {
     bool _applyChanges(Transaction* txn, void* testState = nullptr);
     void _cleanupTxn(Transaction* txn, void* testState = nullptr);
     String getTmpFilename(Transaction* txn, const String& filename);
+    bool isValidFAT16Filename(const String& filename);
+    String getPathFromFilename(const String& filename);
+    String getFilenameFromFullName(const String& filename);
     bool finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState);
 
     // For passing data in/out of Transaction-related lambda functions
@@ -192,6 +210,7 @@ class SDStorage {
      * can be passed to MockSdFat when testing
      */
     bool _exists(const String& filename, void* testState = nullptr);
+    bool _isDir(const String& filename, void* testState = nullptr);
     bool _mkdir(const String& filename, void* testState = nullptr);
     bool _loadFromStream(const String& filename, StreamableDTO* dto, void* testState = nullptr);
     void _writeToStream(const String& filename, StreamableDTO* dto, void* testState = nullptr);
@@ -226,6 +245,29 @@ Transaction* SDStorage::beginTxn(void* testState, const String &filename, Args..
 template <typename... Args>
 bool SDStorage::_beginTxn(Transaction* txn, void* testState, const String &filename, Args... moreFilenames) {
   String resolvedFilename = realFilename(filename);
+  if (!_exists(resolvedFilename, testState)) {
+    // New file to be created, so check the name is valid
+    String shortFilename = getFilenameFromFullName(resolvedFilename);
+    if (!isValidFAT16Filename(shortFilename)) {
+#if defined(DEBUG)
+      Serial.println(String(F("Invalid FAT16 filename: ")) + shortFilename);
+#endif
+      return false;
+    }
+    String path = getPathFromFilename(resolvedFilename);
+    if (!_exists(path, testState)) {
+#if defined(DEBUG)
+      Serial.println(String(F("Directory does not exist: ")) + path);
+#endif
+      return false;
+    }
+    if (!_isDir(path, testState)) {
+#if defined(DEBUG)
+      Serial.println(String(F("Not a directory: ")) + path);
+#endif
+      return false;
+    }
+  }
   txn->add(resolvedFilename, _workDir);
   String tmpFilename = txn->getTmpFilename(resolvedFilename);
   if (_exists(tmpFilename, testState)) {

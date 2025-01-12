@@ -16,7 +16,11 @@ class MockSdFat {
 
   public:
     struct TestState {
-      bool onExistsReturn = false;
+      uint8_t existsCallCount = 0;
+      bool onExistsReturn[8] = { false };
+      bool onExistsAlways = false;
+      bool onExistsAlwaysReturn = false;
+      bool onIsDirectoryReturn = false;
       String mkdirCaptor = String();
       String onLoadData = String();
       String loadFilenameCaptor = String();
@@ -40,7 +44,15 @@ class MockSdFat {
     bool begin(uint8_t sdCsPin) { return true; };
     bool exists(const String& filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      return ts->onExistsReturn;
+      if (ts->onExistsAlways) {
+        return ts->onExistsAlwaysReturn;
+      } else {
+        return ts->onExistsReturn[ts->existsCallCount++];
+      }
+    };
+    bool isDirectory(const String& filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      return ts->onIsDirectoryReturn;
     };
     bool mkdir(const String& filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
