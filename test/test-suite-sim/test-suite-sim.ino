@@ -1,89 +1,44 @@
 #include <SDStorage.h>
+#include <TestTool.h>
 #include "MockSdFat.h"
 #include "SDStorageTestHelper.h"
 
-#define STR(s) String(F(s))
-
-struct TestInvocation {
-  String name = String();
-  bool success = false;
-  String message = String();
-};
-
-extern char __heap_start, *__brkval;
-
-int freeMemory() {
-    char top;
-    if (__brkval == 0) {
-        return &top - &__heap_start;
-    } else {
-        return &top - __brkval;
-    }
-}
 
 SDStorage sdStorage(12, reinterpret_cast<const __FlashStringHelper *>(_MOCK_TESTROOT));
 SDStorageTestHelper helper;
 StreamableManager strManager;
 
 void testBegin(TestInvocation* t) {
-  t->name = STR("SDStorage initialization");
+  t->setName(F("SDStorage initialization"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // root exists?
   ts.onExistsReturn[1] = false; // workdir exists?
   ts.onExistsReturn[2] = false; // idx dir exists?
-  do {
-    if (!sdStorage.begin(&ts)) {
-      t->message = STR("begin() failed");
-      break;
-    }
-    if (!ts.mkdirCaptor.equals(STR("/TESTROOT/~WORK"))) {
-      t->message = STR("Last mkdir didn't match");
-      break;
-    }
-    t->success = true;
-  } while (false);
+
+  t->assert(sdStorage.begin(&ts), F("begin() failed"));
+  t->assertEqual(ts.mkdirCaptor.c_str(), F("/TESTROOT/~WORK"));
 }
 
 void testRealFilename(TestInvocation* t) {
-  t->name = STR("Filename resolution");
-  do {
-    if (!helper.realFilename(&sdStorage, STR("foo")).equals(STR("/TESTROOT/foo"))) {
-      t->message = STR("Prepend root dir prefix failed");
-      break;
-    }
-    if (!helper.realFilename(&sdStorage, STR("/foo")).equals(STR("/TESTROOT/foo"))) {
-      t->message = STR("Ignore leading slash failed");
-      break;
-    }
-    if (!helper.realFilename(&sdStorage, STR("/TESTROOT/foo")).equals(STR("/TESTROOT/foo"))) {
-      t->message = STR("Ignore already under rootDir");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->setName(F("Filename resolution"));
+  t->assertEqual(helper.realFilename(&sdStorage, String("foo")).c_str(), F("/TESTROOT/foo"), F("Prepend root dir prefix failed"));
+  t->assertEqual(helper.realFilename(&sdStorage, String("/foo")).c_str(), F("/TESTROOT/foo"), F("Ignore leading slash failed"));
+  t->assertEqual(helper.realFilename(&sdStorage, String("/TESTROOT/foo")).c_str(), F("/TESTROOT/foo"), F("Ignore already under rootDir"));
 }
 
 void testLoadFile(TestInvocation* t) {
-  t->name = STR("Load a mock file from a stream");
+  t->setName(F("Load a mock file from a stream"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myFile.dat exists?
+
   ts.onLoadData = String("foo=bar\n");
   StreamableDTO dto;
-  do {
-    if (!sdStorage.load(STR("myFile.dat"), &dto, &ts)) {
-      t->message = STR("Load failed");
-      break;
-    }
-    if (strcmp(dto.get(STR("foo").c_str()),"bar") != 0) {
-      t->message = STR("Wrong value for key");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(sdStorage.load(String("myFile.dat"), &dto, &ts), F("Load failed"));
+  t->assertEqual(dto.get(F("foo")), F("bar"));
 }
 
 void testSaveIndividualFile(TestInvocation* t) {
-  t->name = STR("Save an individual file");
+  t->setName(F("Save an individual file"));
   MockSdFat::TestState ts;
   ts.onRenameReturn = true;
   ts.onRemoveReturn = true;
@@ -93,25 +48,13 @@ void testSaveIndividualFile(TestInvocation* t) {
 
   StreamableDTO dto;
   dto.put("def", "ghi");
-  do {
-    if (!sdStorage.save(&ts, STR("writeMe.dat"), &dto)) {
-      t->message = STR("Save failed");
-      break;
-    }
-    if (!ts.writeDataCaptor.getString().equals("def=ghi\n")) {
-      t->message = STR("Unexpected data written");
-      break;
-    }
-    if (!ts.removeCaptor.endsWith(".cmt")) {
-      t->message = STR("Last file removed should have been .cmt file");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(sdStorage.save(&ts, String("writeMe.dat"), &dto), F("Save failed"));
+  t->assertEqual(ts.writeDataCaptor.getString().c_str(), F("def=ghi\n"), F("Unexpected data written"));
+  t->assert(ts.removeCaptor.endsWith(".cmt"), F("Last file removed should have been .cmt file"));
 }
 
 void testCreateTransaction(TestInvocation* t) {
-  t->name = STR("Initialize a transaction");
+  t->setName(F("Initialize a transaction"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // file1.dat exists (overwriting)
   ts.onExistsReturn[1] = false; // file1's temp file does not exist yet
@@ -124,56 +67,33 @@ void testCreateTransaction(TestInvocation* t) {
   ts.onExistsReturn[7] = false; // file2's temp file never written
 
   Transaction* txn = sdStorage.beginTxn(&ts, "file1.dat", "file2.dat");
-  do {
-    if (!txn) {
-      t->message = STR("beginTxn failed");
-      break;
-    }
-    if (ts.writeTxnDataCaptor.getString().indexOf(STR("{TOMBSTONE}")) != -1) {
-      t->message = STR("unexpected tombstone in transaction");
-      break;
-    }
-    ts.onExistsReturn[0] = true; // checking file to erase
-    ts.writeTxnDataCaptor.reset();    
-    if (!sdStorage.erase(&ts, "file1.dat", txn)) {
-      t->message = STR("erase call failed");
-      break;
-    }
-    if (sdStorage.erase(&ts, "file3.dat", txn)) {
-      t->message = STR("Should have failed with file not part of transaction");
-      break;
-    }
-    if (ts.writeTxnDataCaptor.getString().indexOf(STR("{TOMBSTONE}")) == -1) {
-      t->message = STR("missing tombstone in transaction");
-      break;
-    }
-    ts.onExistsReturn[0] = true;
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("beginTxn failed"));
+  t->assert(ts.writeTxnDataCaptor.getString().indexOf(String("{TOMBSTONE}")) == -1, F("unexpected tombstone in transaction"));
+
+  ts.onExistsReturn[0] = true; // checking file to erase
+  ts.writeTxnDataCaptor.reset();    
+  t->assert(sdStorage.erase(&ts, "file1.dat", txn), F("erase call failed"));
+  t->assert(!sdStorage.erase(&ts, "file3.dat", txn), F("Should have failed with file not part of transaction"));
+  t->assert(ts.writeTxnDataCaptor.getString().indexOf(String("{TOMBSTONE}")) != -1, F("missing tombstone in transaction"));
+
+  ts.onExistsReturn[0] = true;
   ts.onRemoveReturn = true;
-  if (txn && !sdStorage.abortTxn(txn, &ts)) {
-    t->success = false;
-    t->message = STR("abortTxn failed");
-  }
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
 void testCreateTransactionCleanupFails(TestInvocation* t) {
-  t->name = STR("Transaction with pre-existing tmp file");
+  t->setName(F("Transaction with pre-existing tmp file"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // file1.dat exists (overwrite)
   ts.onExistsReturn[1] = true; // tmpfile already exists
+
   Transaction* txn = sdStorage.beginTxn(&ts, "file1.dat");
-  do {
-    if (txn) {
-      t->message = STR("beginTxn should have returned nullptr");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(!txn, F("beginTxn should have returned nullptr"));
 }
 
 void testCommitTxNewFile(TestInvocation* t) {
-  t->name = STR("Commit transaction");
+  t->setName(F("Commit transaction"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // newFile.dat does not exist (new file)
   ts.onExistsReturn[1] = true; // /TESTROOT exists
@@ -181,470 +101,250 @@ void testCommitTxNewFile(TestInvocation* t) {
   ts.onExistsReturn[3] = true; // newFile's tmp file does exist now
   ts.onExistsReturn[4] = true; // newFile.dat exists (to remove before replace)
   ts.onIsDirectoryReturn = true; // /TESTROOT is a directory
+
   Transaction* txn = sdStorage.beginTxn(&ts, "newFile.dat");
   StreamableDTO newDto;
-  do {
-    if (!txn) {
-      t->message = STR("beginTxn failed");
-      break;
-    }
-    ts.onRenameReturn = true; // .txn file renamed to .cmt, tmpFile renamed to newFile.dat
-    ts.onRemoveReturn = true; // .cmt file removed
-    if (!sdStorage.commitTxn(txn, &ts)) {
-      t->message = STR("commitTxn failed");
-      break;
-    }
-    if (!ts.renameNewCaptor.equals(STR("/TESTROOT/newFile.dat"))) {
-      t->message = STR("newFile.dat not written");
-      break;
-    }
-    if (ts.removeCaptor.indexOf(STR(".cmt")) == -1) {
-      t->message = STR(".cmt file should have been last to remove");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("beginTxn failed"));
+
+  ts.onRenameReturn = true; // .txn file renamed to .cmt, tmpFile renamed to newFile.dat
+  ts.onRemoveReturn = true; // .cmt file removed
+  t->assert(sdStorage.commitTxn(txn, &ts), F("commitTxn failed"));
+  t->assertEqual(ts.renameNewCaptor.c_str(), F("/TESTROOT/newFile.dat"), F("newFile.dat not written"));
+  t->assert(ts.removeCaptor.indexOf(String(".cmt")) != -1, F(".cmt file should have been last to remove"));
 }
 
 void testAbortTx(TestInvocation* t) {
-  t->name = STR("Abort transaction");
+  t->setName(F("Abort transaction"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myFile.dat does not exist (new file)
   ts.onExistsReturn[1] = false; // newFile's tmp file does not exist yet
+
   Transaction* txn = sdStorage.beginTxn(&ts, "myFile.dat");
   StreamableDTO newDto;
-  do {
-    if (!txn) {
-      t->message = STR("beginTxn failed");
-      break;
-    }
-    ts.onRenameReturn = false; // no renames should happen
-    ts.onRemoveReturn = true; // .txn file removed last
-    if (!sdStorage.abortTxn(txn, &ts)) {
-      t->message = STR("abortTxn failed");
-      break;
-    }
-    if (ts.removeCaptor.indexOf(STR(".txn")) == -1) {
-      t->message = STR(".txn file should have been last to remove");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("beginTxn failed"));
+
+  ts.onRenameReturn = false; // no renames should happen
+  ts.onRemoveReturn = true; // .txn file removed last
+  t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
+  t->assert(ts.removeCaptor.indexOf(String(".txn")) != -1, F(".txn file should have been last to remove"));
 }
 
 void testIdxFilename(TestInvocation* t) {
-  t->name = STR("Index filename");
-  String idxFilename = sdStorage.indexFilename(STR("foo"));
-  do {
-    if (!idxFilename.equals(STR("/TESTROOT/~IDX/foo.idx"))) {
-      t->message = STR("Incorrect index filename");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->setName(F("Index filename"));
+  String idxFilename = sdStorage.indexFilename(String("foo"));
+  t->assertEqual(idxFilename.c_str(), F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
 }
 
 void testIdxUpsert(TestInvocation *t) {
-  t->name = STR("Index upsert");
-  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  t->setName(F("Index upsert"));
+  String idxFilename = sdStorage.indexFilename(String("myIndex"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
   ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
   ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
   ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
+
+
   Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
-  do {
-    if (!txn) {
-      t->message = STR("Create transaction failed");
-      break;
-    }
-    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("fan"), STR("1"), txn)) {
-      t->message = STR("First entry insert failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("fan=1\n"))) {
-      t->message = STR("Unexpected first index entry written");
-      break;
-    }
-    ts.onExistsAlways = true;
-    ts.onExistsAlwaysReturn = true; // simplify remainder of test
-    ts.writeIdxDataCaptor.reset();
-    ts.onReadIdxData = STR("fan=1\n");
-    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("ear"), STR("6"), txn)) {
-      t->message = STR("Insert first line failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=1\n"))) {
-      t->message = STR("Inserted first line in wrong position");
-      break;
-    }
-    ts.writeIdxDataCaptor.reset();
-    ts.onReadIdxData = STR("ear=6\nfan=1\n");
-    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("egg"), STR("12"), txn)) {
-      t->message = STR("Insert between failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\negg=12\nfan=1\n"))) {
-      t->message = STR("Inserted between in wrong position");
-      break;
-    }
-    ts.writeIdxDataCaptor.reset();
-    ts.onReadIdxData = STR("ear=6\nfan=1\n");
-    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("gum"), STR("3"), txn)) {
-      t->message = STR("Insert after last failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=1\ngum=3\n"))) {
-      t->message = STR("Inserted after last in wrong position");
-      break;
-    }
-    ts.writeIdxDataCaptor.reset();
-    ts.onReadIdxData = STR("ear=6\nfan=1\n");
-    if (!sdStorage.idxUpsert(&ts, STR("myIndex"), STR("fan"), STR("3"), txn)) {
-      t->message = STR("Update index entry failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("ear=6\nfan=3\n"))) {
-      t->message = STR("Unexpected index data after update entry");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("Create transaction failed"));
+  t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("1"), txn), F("First entry insert failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("fan=1\n"), F("Unexpected first index entry written"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify remainder of test
+  ts.writeIdxDataCaptor.reset();
+  ts.onReadIdxData = String("fan=1\n");
+  t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("ear"), String("6"), txn), F("Insert first line failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\n"), F("Inserted first line in wrong position"));
+
+  ts.writeIdxDataCaptor.reset();
+  ts.onReadIdxData = String("ear=6\nfan=1\n");
+  t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("egg"), String("12"), txn), F("Insert between failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\negg=12\nfan=1\n"), F("Inserted between in wrong position"));
+
+  ts.writeIdxDataCaptor.reset();
+  ts.onReadIdxData = String("ear=6\nfan=1\n");
+  t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("gum"), String("3"), txn), F("Insert after last failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\ngum=3\n"), F("Inserted after last in wrong position"));
+
+
+  ts.writeIdxDataCaptor.reset();
+  ts.onReadIdxData = String("ear=6\nfan=1\n");
+  t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("3"), txn), F("Update index entry failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=3\n"), F("Unexpected index data after update entry"));
+
   ts.onRemoveReturn = true;
-  if (txn && !sdStorage.abortTxn(txn, &ts)) {
-    t->success = false;
-    t->message = STR("Abort transaction failed");
-  }
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
 void testIdxRemove(TestInvocation *t) {
-  t->name = STR("Index remove");
-  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  t->setName(F("Index remove"));
+  String idxFilename = sdStorage.indexFilename(String("myIndex"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists
   ts.onExistsReturn[1] = false; // temp file does not exist yet
   ts.onExistsReturn[2] = true; // myIndex.idx still exists
   ts.onExistsReturn[3] = true; // temp file exists now
+
   Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
-  do {
-    if (!txn) {
-      t->message = STR("Create transaction failed");
-      break;
-    }
-    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
-    if (!sdStorage.idxRemove(&ts, STR("myIndex"), STR("ear"), txn)) {
-      t->message = STR("Remove key failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("egg=45\nfan=1\n"))) {
-      t->message = STR("Unexpected index data after remove key");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onReadIdxData = String("ear=3\negg=45\nfan=1\n");
+  t->assert(sdStorage.idxRemove(&ts, String("myIndex"), String("ear"), txn), F("Remove key failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("egg=45\nfan=1\n"), F("Unexpected index data after remove key"));
+
   ts.onRemoveReturn = true;
-  if (txn && !sdStorage.abortTxn(txn, &ts)) {
-    t->success = false;
-    t->message = STR("Abort transaction failed");
-  }
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
 void testIdxLookup(TestInvocation *t) {
-  t->name = STR("Index lookup");
+  t->setName(F("Index lookup"));
   MockSdFat::TestState ts;
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true;
-  do {
-    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
-    String value = sdStorage.idxLookup(STR("myIndex"), STR("egg"), &ts);
-    if (value.length() == 0) {
-      t->message = STR("Lookup failed");
-      break;
-    }
-    if (!value.equals(STR("45"))) {
-      t->message = STR("Incorrect value from index lookup");
-      break;
-    }
-    value = sdStorage.idxLookup(STR("myIndex"), STR("foo"), &ts);
-    if (value.length() != 0) {
-      t->message = STR("Expected empty string");
-      break;
-    }
-    t->success = true;
-  } while (false);
+
+  ts.onReadIdxData = String("ear=3\negg=45\nfan=1\n");
+  String value = sdStorage.idxLookup(String("myIndex"), String("egg"), &ts);
+  t->assert(value.length() != 0, F("Lookup failed"));
+  t->assertEqual(value.c_str(), F("45"));
+
+  value = sdStorage.idxLookup(String("myIndex"), String("foo"), &ts);
+  t->assert(value.length() == 0, F("Expected empty string"));
 }
 
 void testIdxHasKey(TestInvocation *t) {
-  t->name = STR("Index key exists");
+  t->setName(F("Index key exists"));
   MockSdFat::TestState ts;
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true;
-  do {
-    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
-    if (!sdStorage.idxHasKey(STR("myIndex"), STR("ear"), &ts)) {
-      t->message = STR("Key should have existed");
-      break;
-    }
-    if (sdStorage.idxHasKey(STR("myIndex"), STR("lap"), &ts)) {
-      t->message = STR("Key should not have existed");
-      break;
-    }
-    t->success = true;
-  } while (false);
+
+  ts.onReadIdxData = String("ear=3\negg=45\nfan=1\n");
+  t->assert(sdStorage.idxHasKey(String("myIndex"), String("ear"), &ts), F("Key should have existed"));
+  t->assert(!sdStorage.idxHasKey(String("myIndex"), String("lap"), &ts), F("Key should not have existed"));
 }
 
 void testIdxRenameKey(TestInvocation *t) {
-  t->name = STR("Rename index key");
-  String idxFilename = sdStorage.indexFilename(STR("myIndex"));
+  t->setName(F("Rename index key"));
+  String idxFilename = sdStorage.indexFilename(String("myIndex"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists
   ts.onExistsReturn[1] = false; // temp file does not exist yet
+
   Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
-  do {
-    if (!txn) {
-      t->message = STR("Create transaction failed");
-      break;
-    }
-    ts.onExistsAlways = true;
-    ts.onExistsAlwaysReturn = true; // simplify the rest of the test
-    ts.onReadIdxData = STR("ear=3\negg=45\nfan=1\n");
-    if (!sdStorage.idxRename(&ts, STR("myIndex"), STR("egg"), STR("bag"), txn)) {
-      t->message = STR("Rename key failed");
-      break;
-    }
-    if (!ts.writeIdxDataCaptor.getString().equals(STR("bag=45\near=3\nfan=1\n"))) {
-      t->message = STR("Unexpected index data after rename key");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onReadIdxData = String("ear=3\negg=45\nfan=1\n");
+  t->assert(sdStorage.idxRename(&ts, String("myIndex"), String("egg"), String("bag"), txn), F("Rename key failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("bag=45\near=3\nfan=1\n"), F("Unexpected index data after rename key"));
+
   ts.onRemoveReturn = true;
-  if (txn && !sdStorage.abortTxn(txn, &ts)) {
-    t->success = false;
-    t->message = STR("Abort transaction failed");
-  }
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
 void testIdxSearchResults(TestInvocation *t) {
-  t->name = STR("SearchResults struct");
-  SDStorage::SearchResults* sr = new SDStorage::SearchResults(STR("a"));
-  do {
-    if (!sr->searchPrefix.equals("a")) {
-      t->message = STR("Expected 'a' but got '") + sr->searchPrefix + STR("'");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  t->setName(F("SearchResults struct"));
+  SDStorage::SearchResults* sr = new SDStorage::SearchResults(String("a"));
+  t->assertEqual(sr->searchPrefix.c_str(), F("a"));
   delete sr;
 }
 
 void testIdxPrefixSearchNoResults(TestInvocation *t) {
-  t->name = STR("Index prefix search with no results");
+  t->setName(F("Index prefix search with no results"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // index file exists
-  SDStorage::SearchResults sr(STR("a"));
-  do {
-    sdStorage.idxPrefixSearch(STR("myIndex"), &sr, &ts);
-    if (sr.matchResult) {
-      t->message = STR("Should have found no matches");
-      break;
-    }
-    if (sr.trieResult) {
-      t->message = STR("Trie results should be empty");
-      break;
-    }
-    if (sr.trieMode) {
-      t->message = STR("Should not have switched to trie mode");
-      break;
-    }
-    t->success = true;
-  } while (false);
+
+  SDStorage::SearchResults sr(String("a"));
+  sdStorage.idxPrefixSearch(String("myIndex"), &sr, &ts);
+  t->assert(!sr.matchResult, F("Should have found no matches"));
+  t->assert(!sr.trieResult, F("Trie results should be empty"));
+  t->assert(!sr.trieMode, F("Should not have switched to trie mode"));
 }
 
 void testIdxPrefixSearchEmptySearchString(TestInvocation *t) {
-  t->name = STR("Index prefix search with empty search string");
+  t->setName(F("Index prefix search with empty search string"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // index file exists
-  ts.onReadIdxData = STR("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n");
-  SDStorage::SearchResults sr(STR(""));
-  do {
-    sdStorage.idxPrefixSearch(STR("myIndex"), &sr, &ts);
-    if (!sr.matchResult) {
-      t->message = STR("matchResult should be populated");
-      break;
-    }
-    String keys[] = { "ear", "egg", "era", "erf", "fan", "glob" };
-    String values[] = { "3", "45", "12", "20", "1", "" };
-    SDStorage::KeyValue* kv = sr.matchResult;
 
-    for (uint8_t i = 0; i < 6; i++) {
-      if (!kv) {
-        t->message = STR("Result should not be nullptr at index ") + String(i);
-        break;
-      }
-      if (!kv->key.equals(keys[i])) {
-        t->message = STR("Incorrect key result at index ") + String(i);
-        break;
-      }
-      if (!kv->value.equals(values[i])) {
-        t->message = STR("Incorrect value result at index ") + String(i);
-        break;
-      }
-      kv = kv->next;
-    }
-    if (kv) {
-      t->message = STR("Unexpected extra results");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  ts.onReadIdxData = String("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n");
+  SDStorage::SearchResults sr(String(""));
+  sdStorage.idxPrefixSearch(String("myIndex"), &sr, &ts);
+  t->assert(sr.matchResult, F("matchResult should be populated"));
+
+  String keys[] = { "ear", "egg", "era", "erf", "fan", "glob" };
+  String values[] = { "3", "45", "12", "20", "1", "" };
+  SDStorage::KeyValue* kv = sr.matchResult;
+
+  for (uint8_t i = 0; i < 6; i++) {
+    t->assert(kv, (String("Result should not be nullptr at index ") + String(i)).c_str());
+    t->assertEqual(kv->key.c_str(), keys[i].c_str(), (String("Incorrect key result at index ") + String(i)).c_str());
+    t->assertEqual(kv->value.c_str(), values[i].c_str(), (String("Incorrect value result at index ") + String(i)).c_str());
+    kv = kv->next;
+  }
+  t->assert(!kv, F("Unexpected extra results"));
 }
 
-
 void testIdxPrefixSearchUnder10Matches(TestInvocation *t) {
-  t->name = STR("Index prefix search with <10 matches");
+  t->setName(F("Index prefix search with <10 matches"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // index file exists
-  ts.onReadIdxData = STR("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n");
-  SDStorage::SearchResults sr(STR("e"));
-  do {
-    if (!sr.searchPrefix.equals("e")) {
-      t->message = STR("Wrong search prefix passed");
-      break;
-    }
-    sdStorage.idxPrefixSearch(STR("myIndex"), &sr, &ts);
-    if (!sr.searchPrefix.equals("e")) {
-      t->message = STR("Search prefix changed!");
-      break;
-    }
-    if (sr.trieMode) {
-      t->message = STR("Should not have switched to trie mode");
-      break;
-    }
-    if (!sr.matchResult) {
-      t->message = STR("matchResult should be populated");
-      break;
-    }
-    if (sr.trieResult != nullptr) {
-      t->message = STR("trieResult should not be populated");
-      break;
-    }
-    String keys[] = { "ear", "egg", "era", "erf" };
-    String values[] = { "3", "45", "12", "20" };
-    SDStorage::KeyValue* kv = sr.matchResult;
 
-    for (uint8_t i = 0; i < 4; i++) {
-      if (!kv) {
-        t->message = STR("Result should not be nullptr at index ") + String(i);
-        break;
-      }
-      if (!kv->key.equals(keys[i])) {
-        t->message = STR("Incorrect key result at index ") + String(i);
-        break;
-      }
-      if (!kv->value.equals(values[i])) {
-        t->message = STR("Incorrect value result at index ") + String(i);
-        break;
-      }
-      kv = kv->next;
-    }
-    if (kv) {
-      t->message = STR("Unexpected extra results");
-      break;
-    }
-    t->success = true;
-  } while (false);
+  ts.onReadIdxData = String("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n");
+  SDStorage::SearchResults sr(String("e"));
+  t->assertEqual(sr.searchPrefix.c_str(), F("e"), F("Wrong search prefix passed"));
+  sdStorage.idxPrefixSearch(String("myIndex"), &sr, &ts);
+  t->assertEqual(sr.searchPrefix.c_str(), F("e"), F("Search prefix changed!"));
+  t->assert(sr.matchResult, F("matchResult should be populated"));
+  t->assert(!sr.trieResult, F("trieResult should not be populated"));
+  t->assert(!sr.trieMode, F("Should not have switched to trie mode"));
+
+  String keys[] = { "ear", "egg", "era", "erf" };
+  String values[] = { "3", "45", "12", "20" };
+  SDStorage::KeyValue* kv = sr.matchResult;
+
+  for (uint8_t i = 0; i < 4; i++) {
+    t->assert(kv, (String("Result should not be nullptr at index ") + String(i)).c_str());
+    t->assertEqual(kv->key.c_str(), keys[i].c_str(), (String("Incorrect key result at index ") + String(i)).c_str());
+    t->assertEqual(kv->value.c_str(), values[i].c_str(), (String("Incorrect value result at index ") + String(i)).c_str());
+    kv = kv->next;
+  }
+  t->assert(!kv, F("Unexpected extra results"));
 }
 
 void testIdxPrefixSearchOver10Matches(TestInvocation *t) {
-  t->name = STR("Index prefix search with >10 matches");
+  t->setName(F("Index prefix search with >10 matches"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // index file exists
-  ts.onReadIdxData = STR("are=1\near=3\neast=23\ned=209\negg=45\nent=65\nera=12\nerf=20\neta=2\netre=98\neva=4\nexit=4\nfan=1\nglob=\n");
-  SDStorage::SearchResults sr(STR("e"));
-  do {
-    sdStorage.idxPrefixSearch(STR("myIndex"), &sr, &ts);
-    if (!sr.trieMode) {
-      t->message = STR("Should have switched to trie mode");
-      break;
-    }
-    if (sr.matchResult) {
-      t->message = STR("matchResult should not be populated");
-      break;
-    }
-    if (!sr.trieResult) {
-      t->message = STR("trieResult should be populated");
-      break;
-    }
-    String keys[] = { "a", "d", "g", "n", "r", "t", "v", "x" };
-    String values[] = { "", "209", "", "", "", "", "", "" };
-    SDStorage::KeyValue* kv = sr.trieResult;
 
-    for (uint8_t i = 0; i < 8; i++) {
-      if (!kv) {
-        t->message = STR("Result should not be nullptr at index ") + String(i);
-        break;
-      }
-      if (!kv->key.equals(keys[i])) {
-        t->message = STR("Incorrect key result at index ") + String(i);
-        break;
-      }
-      if (!kv->value.equals(values[i])) {
-        t->message = STR("Incorrect value result at index ") + String(i);
-        break;
-      }
-      kv = kv->next;
-    }
-    if (kv) {
-      t->message = STR("Unexpected extra results");
-      break;
-    }
-    t->success = true;
-  } while (false);
-}
+  ts.onReadIdxData = String("are=1\near=3\neast=23\ned=209\negg=45\nent=65\nera=12\nerf=20\neta=2\netre=98\neva=4\nexit=4\nfan=1\nglob=\n");
+  SDStorage::SearchResults sr(String("e"));
+  sdStorage.idxPrefixSearch(String("myIndex"), &sr, &ts);
+  t->assert(!sr.matchResult, F("matchResult should not be populated"));
+  t->assert(sr.trieResult, F("trieResult should be populated"));
+  t->assert(sr.trieMode, F("Should have switched to trie mode"));
 
+  String keys[] = { "a", "d", "g", "n", "r", "t", "v", "x" };
+  String values[] = { "", "209", "", "", "", "", "", "" };
+  SDStorage::KeyValue* kv = sr.trieResult;
 
-bool printAndCheckResult(TestInvocation* t) {
-  uint8_t nameWidth = 48;
-  String name;
-  name.reserve(nameWidth);
-  name = STR("  ") + t->name + STR("...");
-  if (name.length() > nameWidth) {
-    name = name.substring(0, nameWidth);
-  } else if (name.length() < nameWidth) {
-    uint8_t padding = nameWidth - name.length();
-    for (uint8_t i = 0; i < padding; i++) {
-      name += " ";
-    }
+  for (uint8_t i = 0; i < 8; i++) {
+    t->assert(kv, (String("Result should not be nullptr at index ") + String(i)).c_str());
+    t->assertEqual(kv->key.c_str(), keys[i].c_str(), (String("Incorrect key result at index ") + String(i)).c_str());
+    t->assertEqual(kv->value.c_str(), values[i].c_str(), (String("Incorrect value result at index ") + String(i)).c_str());
+    kv = kv->next;
   }
-  Serial.print(name + " ");
-  if (t->success) {
-    Serial.println(F("PASSED"));
-  } else {
-    Serial.println(F("FAILED"));
-    if (t->message.length() > 0) {
-      Serial.print(F("    "));
-      Serial.println(t->message);
-    }
-    return false;
-  }
-  return true;
-}
-
-bool invokeTest(void (*testFunction)(TestInvocation* t)) {
-  TestInvocation t;
-  testFunction(&t);
-  return printAndCheckResult(&t);
+  t->assert(!kv, F("Unexpected extra results"));
 }
 
 void setup() {
   Serial.begin(9600);
   while (!Serial);
 
-  Serial.println(F("Starting SDStorage tests..."));
-
-  void (*tests[])(TestInvocation*) = {
-
+  TestFunction tests[] = {
     testBegin,
     testRealFilename,
     testLoadFile,
@@ -664,22 +364,10 @@ void setup() {
     testIdxPrefixSearchEmptySearchString,
     testIdxPrefixSearchUnder10Matches,
     testIdxPrefixSearchOver10Matches
+};
 
-  };
+  runTestSuiteShowMem(tests);
 
-  bool success = true;
-  for (int i = 0; i < sizeof(tests) / sizeof(tests[0]); i++) {
-    // for (uint8_t j = 0; j < 20; j++) {
-    // Serial.println("Memory before test: "+String(freeMemory()));
-      success &= invokeTest(tests[i]);
-    // Serial.println("Memory after test: "+String(freeMemory()));
-    // }
-  }
-  if (success) {
-    Serial.println(F("All tests passed!"));
-  } else {
-    Serial.println(F("Test suite failed!"));
-  }
 }
 
 void loop() {}

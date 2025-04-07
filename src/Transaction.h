@@ -40,7 +40,7 @@ class Transaction: public StreamableDTO {
     };
     String getTmpFilename(const String &filename) {
       String tmpFilename = String();
-      char* tmpFn = get(filename);
+      char* tmpFn = get(filename.c_str());
       if (tmpFn != nullptr) {
         tmpFilename = String(tmpFn);
       }

@@ -1,3 +1,14 @@
+/*
+
+  SDStorage.h
+
+  SD card storage manager for StreamableDTOs with index and transaction support
+
+  Copyright (c) 2025, Dan Mowehhuk (danmowehhuk@gmail.com)
+  All rights reserved.
+
+*/
+
 #ifndef _SDStorage_h
 #define _SDStorage_h
 
@@ -192,18 +203,18 @@ class SDStorage {
 
     // index helpers
     void _idxScan(const String& idxName, IdxScanCapture* state, void* testState = nullptr);
-    static bool _pipeFast(const String& line, StreamableManager::DestinationStream* dest);
+    static bool _pipeFast(const char* line, StreamableManager::DestinationStream* dest);
     static String toIndexLine(const String& key, const String& value);
     static String parseIndexKey(const String& line);
     static String parseIndexValue(const String& line);
     static void _appendKeyValue(KeyValue* head, KeyValue* result);
     static void appendMatchResult(SearchResults* sr, KeyValue* result);
     static void appendTrieResult(SearchResults* sr, KeyValue* result);
-    static bool idxLookupFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
-    static bool idxUpsertFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
-    static bool idxRemoveFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
-    static bool idxRenameFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
-    static bool idxPrefixSearchFilter(const String& line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxLookupFilter(const char* line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxUpsertFilter(const char* line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxRemoveFilter(const char* line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxRenameFilter(const char* line, StreamableManager::DestinationStream* dest, void* statePtr);
+    static bool idxPrefixSearchFilter(const char* line, StreamableManager::DestinationStream* dest, void* statePtr);
 
     /*
      * Wrap the underlying calls to _sd so that a state capture object

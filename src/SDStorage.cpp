@@ -106,7 +106,7 @@ bool SDStorage::save(void* testState, const String &filename, StreamableDTO* dto
     if (!txn) return false;
     implicitTx = true;
   }
-  String tmpFilename = getTmpFilename(txn, resolvedFilename);
+  String tmpFilename = getTmpFilename(txn, resolvedFilename);  
   if (tmpFilename.length() == 0) return false;
   _writeToStream(tmpFilename, dto, testState);
   bool result = true;
@@ -380,14 +380,14 @@ bool SDStorage::commitTxn(Transaction* txn, void* testState = nullptr) {
 
 bool SDStorage::abortTxn(Transaction* txn, void* testState = nullptr) {
   TransactionCapture capture(this, testState);
-  auto cleanupFunction = [](const String& filename, const String& tmpFilename, void* capture) -> bool {
+  auto cleanupFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valPmem, void* capture) -> bool {
     TransactionCapture* c = static_cast<TransactionCapture*>(capture);
-    if (strcmp_P(tmpFilename.c_str(), _SDSTORAGE_TOMBSTONE) == 0) {
+    if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
       // Tombstone - nothing to clean up
-    } else if (c->sdStorage->_exists(tmpFilename, c->ts)) {
-      if (!c->sdStorage->_remove(tmpFilename, c->ts)) {
+    } else if (c->sdStorage->_exists(String(tmpFilename), c->ts)) {
+      if (!c->sdStorage->_remove(String(tmpFilename), c->ts)) {
 #if defined(DEBUG)
-        Serial.println(tmpFilename + String(F(" could not be removed")));
+        Serial.println(String(tmpFilename) + String(F(" could not be removed")));
 #endif
         c->success = false;
         return false;
@@ -411,11 +411,11 @@ bool SDStorage::abortTxn(Transaction* txn, void* testState = nullptr) {
 
 bool SDStorage::_applyChanges(Transaction* txn, void* testState = nullptr) {
   TransactionCapture capture(this, testState);
-  auto applyChangesFunction = [](const String& filename, const String& tmpFilename, void* capture) -> bool {
+  auto applyChangesFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valuePmem, void* capture) -> bool {
     TransactionCapture* c = static_cast<TransactionCapture*>(capture);
-    if (strcmp_P(tmpFilename.c_str(), _SDSTORAGE_TOMBSTONE) == 0) {
+    if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
       // tombstone - delete the file
-      c->sdStorage->_remove(filename, c->ts);
+      c->sdStorage->_remove(String(filename), c->ts);
     } else if (!c->sdStorage->_exists(tmpFilename, c->ts)) {
       // No changes to apply (tmpFile was never written)
     } else {
@@ -426,10 +426,10 @@ bool SDStorage::_applyChanges(Transaction* txn, void* testState = nullptr) {
         c->success = false;
         return false;
       }
-      if (!c->sdStorage->_rename(tmpFilename, filename, c->ts)) {
+      if (!c->sdStorage->_rename(String(tmpFilename), String(filename), c->ts)) {
 #if defined(DEBUG)
-        Serial.println(String(F("Could not move ")) + tmpFilename
-              + String(F(" to ")) + filename);
+        Serial.println(String(F("Could not move ")) + String(tmpFilename)
+              + String(F(" to ")) + String(filename));
 #endif
         c->success = false;
         return false;
@@ -604,15 +604,15 @@ String SDStorage::parseIndexValue(const String& line) {
   return value;
 }
 
-bool SDStorage::_pipeFast(const String& line, StreamableManager::DestinationStream* dest) {
+bool SDStorage::_pipeFast(const char* line, StreamableManager::DestinationStream* dest) {
   dest->println(line);
   return true;
 }
 
-bool SDStorage::idxLookupFilter(const String& line, StreamableManager::DestinationStream* dest, 
+bool SDStorage::idxLookupFilter(const char* line, StreamableManager::DestinationStream* dest, 
       void* statePtr) {
   IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
-  if (strcmp(state->key.c_str(), parseIndexKey(line).c_str()) == 0) {
+  if (strcmp(state->key.c_str(), parseIndexKey(String(line)).c_str()) == 0) {
     state->keyExists = true;
     state->value = parseIndexValue(line);
     return false; // stop scanning
@@ -620,23 +620,23 @@ bool SDStorage::idxLookupFilter(const String& line, StreamableManager::Destinati
   return true; // keep going
 }
 
-bool SDStorage::idxUpsertFilter(const String& line, StreamableManager::DestinationStream* dest, 
+bool SDStorage::idxUpsertFilter(const char* line, StreamableManager::DestinationStream* dest, 
       void* statePtr) {
   IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
   if (state->didUpsert) {
     // Upsert already happened. Pipe the rest in fast mode.
     return _pipeFast(line, dest);
   }
-  String key = parseIndexKey(line);
+  String key = parseIndexKey(String(line));
   if (strcmp(state->key.c_str(), key.c_str()) == 0) {
     // Found matching key - update the value
-    dest->println(toIndexLine(key, state->valueIn));
+    dest->println(toIndexLine(key, state->valueIn).c_str());
     state->didUpsert = true;
   } else if (strcmp(state->key.c_str(), key.c_str()) < 0 &&               // state->key is before key
           (state->prevKey.length() == 0                                   // this is the first key OR
            || strcmp(state->key.c_str(), state->prevKey.c_str()) > 0)) {  // state->key is after prevKey
       // insert new key/value before line
-      dest->println(toIndexLine(state->key, state->valueIn));
+      dest->println(toIndexLine(state->key, state->valueIn).c_str());
       dest->println(line);
       state->didUpsert = true;
   } else {
@@ -647,28 +647,28 @@ bool SDStorage::idxUpsertFilter(const String& line, StreamableManager::Destinati
   return true;
 }
 
-bool SDStorage::idxRemoveFilter(const String& line, StreamableManager::DestinationStream* dest, 
+bool SDStorage::idxRemoveFilter(const char* line, StreamableManager::DestinationStream* dest, 
       void* statePtr) {
   IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
   if (state->didRemove) {
     // Remove already happened. Pipe the rest in fast mode.
     return _pipeFast(line, dest);
   }
-  if (strcmp(state->key.c_str(), parseIndexKey(line).c_str()) == 0) {
+  if (strcmp(state->key.c_str(), parseIndexKey(String(line)).c_str()) == 0) {
     /* skip it */ 
     state->didRemove = true;
   } else { dest->println(line); }
   return true;
 }
 
-bool SDStorage::idxRenameFilter(const String& line, StreamableManager::DestinationStream* dest, 
+bool SDStorage::idxRenameFilter(const char* line, StreamableManager::DestinationStream* dest, 
       void* statePtr) {
   IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
   if (state->didRemove && state->didInsert) {
     // Rename already happened. Pipe the rest in fast mode.
     return _pipeFast(line, dest);
   }
-  String key = parseIndexKey(line);
+  String key = parseIndexKey(String(line));
   if (strcmp(state->key.c_str(), key.c_str()) == 0) {
     /* skip the old key */
     state->didRemove = true;
@@ -679,7 +679,7 @@ bool SDStorage::idxRenameFilter(const String& line, StreamableManager::Destinati
           (state->prevKey.length() == 0                                      // this is the first key OR
            || strcmp(state->newKey.c_str(), state->prevKey.c_str()) > 0)) {  // state->newKey is after prevKey
       // insert new newKey/value before line
-      dest->println(toIndexLine(state->newKey, state->value));
+      dest->println(toIndexLine(state->newKey, state->value).c_str());
       dest->println(line);
       state->didInsert = true;
   } else {
@@ -690,10 +690,10 @@ bool SDStorage::idxRenameFilter(const String& line, StreamableManager::Destinati
   return true;
 }
 
-bool SDStorage::idxPrefixSearchFilter(const String& line, StreamableManager::DestinationStream* dest, 
+bool SDStorage::idxPrefixSearchFilter(const char* line, StreamableManager::DestinationStream* dest, 
       void* statePtr) {
   SearchResults* results = static_cast<SearchResults*>(statePtr);
-  String key = parseIndexKey(line);
+  String key = parseIndexKey(String(line));
   String prefix = results->searchPrefix;
 
   if (prefix.length() > 0 && !key.startsWith(prefix) && strcmp(key.c_str(), prefix.c_str()) > 0) {
@@ -702,7 +702,7 @@ bool SDStorage::idxPrefixSearchFilter(const String& line, StreamableManager::Des
     return false;
   }
   if (prefix.length() == 0 || key.startsWith(prefix)) {
-    String value = parseIndexValue(line);
+    String value = parseIndexValue(String(line));
     // Handle up to 10 matches, then switch to trie mode
     if (results->matchCount < 10) {
       KeyValue* match = new KeyValue(key, value);

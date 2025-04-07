@@ -6,8 +6,7 @@ static StreamableDTO* Transaction::_locks = new StreamableDTO();
 
 void Transaction::add(const String &filename, const String &workDir) {
   bool didLog = false;
-//  Serial.println("CHECK  == " + filename);
-  while (_locks->exists(filename)) {
+  while (_locks->exists(filename.c_str())) {
     // wait until the key is removed (lock released)
 #if defined(DEBUG)
     if (!didLog) {
@@ -16,20 +15,18 @@ void Transaction::add(const String &filename, const String &workDir) {
     }
 #endif
   }
-  // Serial.println("LOCK   == " + filename);
-  _locks->putEmpty(filename);
+  _locks->putEmpty(filename.c_str());
 
   size_t bufferSize = workDir.length() + 16; // for /<seq_no>.tmp
   char tmpFilename[bufferSize];
   snprintf(tmpFilename, bufferSize, "%s/%s%s", workDir.c_str(), 
         String(_idSeq++).c_str(), reinterpret_cast<const __FlashStringHelper *>(_SDSTORAGE_TXN_TMP_EXTSN));
-  put(filename, String(tmpFilename));
+  put(filename.c_str(), strdup(tmpFilename));
 }
 
 void Transaction::releaseLocks() {
-  auto unlockFunction = [](const String& filename, const String& tmpFilename, void* capture) -> bool {
+  auto unlockFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valPmem, void* capture) -> bool {
     bool result = _locks->remove(filename);
-    // Serial.println("UNLOCK == " + filename + " (" + String(result) + ")");
     return result;
   };
   processEntries(unlockFunction, nullptr);
