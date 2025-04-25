@@ -7,100 +7,95 @@
 
 static const char _MOCK_TESTROOT[] PROGMEM = "TESTROOT";
 
-int freeMemory(); // forward declaration
-
 class MockSdFat {
 
-  private:
-    MockSdFat(MockSdFat &t) = delete;
-
   public:
+    MockSdFat() {};
+
+    // Disable moving and copying
+    MockSdFat(MockSdFat&& other) = delete;
+    MockSdFat& operator=(MockSdFat&& other) = delete;
+    MockSdFat(const MockSdFat&) = delete;
+    MockSdFat& operator=(const MockSdFat&) = delete;
+
     struct TestState {
       uint8_t existsCallCount = 0;
       bool onExistsReturn[8] = { false };
       bool onExistsAlways = false;
       bool onExistsAlwaysReturn = false;
       bool onIsDirectoryReturn = false;
-      String mkdirCaptor = String();
-      String onLoadData = String();
-      String loadFilenameCaptor = String();
-      String removeCaptor = String();
       bool onRemoveReturn = false;
-      StringStream writeDataCaptor;
-      String writeFilenameCaptor = String();
-      StringStream writeTxnDataCaptor;
-      String writeTxnFilenameCaptor = String();
-      String renameOldCaptor = String();
-      String renameNewCaptor = String();
       bool onRenameReturn = false;
-      String onReadIdxData = String();
-      String readIdxFilenameCaptor = String();
-      StringStream writeIdxDataCaptor;
-      String writeIdxFilenameCaptor = String();
-    };
+      char* mkdirCaptor = nullptr;
+      char* writeTxnFilenameCaptor = nullptr;
+      char* removeCaptor = nullptr;
+      char* renameOldCaptor = nullptr;
+      char* renameNewCaptor = nullptr;
+      StringStream writeTxnDataCaptor;
 
-    MockSdFat() {};
+      ~TestState() {
+        if (mkdirCaptor) free(mkdirCaptor);
+        if (writeTxnFilenameCaptor) free(writeTxnFilenameCaptor);
+        if (removeCaptor) free(removeCaptor);
+        if (renameOldCaptor) free(renameOldCaptor);
+        if (renameNewCaptor) free(renameNewCaptor);
+        mkdirCaptor = nullptr;
+        writeTxnFilenameCaptor = nullptr;
+        removeCaptor = nullptr;
+        renameOldCaptor = nullptr;
+        renameNewCaptor = nullptr;
+      };
+    };
 
     bool begin(uint8_t sdCsPin) { return true; };
-    bool exists(const String& filename, void* testState) {
+
+    bool mkdir(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      if (ts->onExistsAlways) {
-        return ts->onExistsAlwaysReturn;
-      } else {
-        return ts->onExistsReturn[ts->existsCallCount++];
-      }
-    };
-    bool isDirectory(const String& filename, void* testState) {
-      TestState* ts = static_cast<TestState*>(testState);
-      return ts->onIsDirectoryReturn;
-    };
-    bool mkdir(const String& filename, void* testState) {
-      TestState* ts = static_cast<TestState*>(testState);
-      ts->mkdirCaptor = filename;
+      ts->mkdirCaptor = strdup(filename);
       return true;
     };
-    bool remove(const String& filename, void* testState) {
+
+    bool exists(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      ts->removeCaptor = filename;
+      bool result = false;
+      if (ts->onExistsAlways) {
+        result = ts->onExistsAlwaysReturn;
+      } else {
+        result = ts->onExistsReturn[ts->existsCallCount++];
+      }
+      return result;
+    };
+
+    bool remove(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->removeCaptor) free(ts->removeCaptor);
+      ts->removeCaptor = nullptr;
+      ts->removeCaptor = strdup(filename);
       return ts->onRemoveReturn;
     };
 
-    bool rename(const String& oldFilename, const String& newFilename, void* testState) {
+    bool rename(const char* oldFilename, const char* newFilename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      ts->renameOldCaptor = oldFilename;
-      ts->renameNewCaptor = newFilename;
+      if (ts->renameOldCaptor) free(ts->renameOldCaptor);
+      ts->renameOldCaptor = nullptr;
+      ts->renameOldCaptor = strdup(oldFilename);
+      if (ts->renameNewCaptor) free(ts->renameNewCaptor);
+      ts->renameNewCaptor = nullptr;
+      ts->renameNewCaptor = strdup(newFilename);
       return ts->onRenameReturn;
     };
 
-    Stream* loadFileStream(const String& filename, void* testState) {
+    bool isDirectory(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      ts->loadFilenameCaptor = filename;
-      StringStream* ss = new StringStream(ts->onLoadData);
-      return ss;
+      return ts->onIsDirectoryReturn;
     };
 
-    Stream* writeFileStream(const String& filename, void* testState) {
+    Stream* writeTxnFileStream(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      return &(ts->writeDataCaptor);
-    };
-
-    Stream* writeTxnFileStream(const String& filename, void* testState) {
-      TestState* ts = static_cast<TestState*>(testState);
-      ts->writeTxnFilenameCaptor = filename;
+      if (ts->writeTxnFilenameCaptor) free(ts->writeTxnFilenameCaptor);
+      ts->writeTxnFilenameCaptor = nullptr;
+      ts->writeTxnFilenameCaptor = strdup(filename);
       return &(ts->writeTxnDataCaptor);
-    };
-
-    Stream* readIndexFileStream(const String& filename, void* testState) {
-      TestState* ts = static_cast<TestState*>(testState);
-      ts->readIdxFilenameCaptor = filename;
-      StringStream* ss = new StringStream(ts->onReadIdxData);
-      return ss;
-    };
-
-    Stream* writeIndexFileStream(const String& filename, void* testState) {
-      TestState* ts = static_cast<TestState*>(testState);
-      ts->writeIdxFilenameCaptor = filename;
-      return &(ts->writeIdxDataCaptor);
     };
 
 };

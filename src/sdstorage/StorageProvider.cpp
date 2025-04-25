@@ -1,0 +1,68 @@
+#include "StorageProvider.h"
+
+/******
+ * 
+ * The following wrapper methods allow sending a state object to a 
+ * mock version of SdFat when testing on a simulator. These all expect
+ * the absolute filename as returned by realFilename(...)
+ * 
+ ******/
+
+bool StorageProvider::_exists(const char* filename, void* testState = nullptr) {
+#if defined(__SDSTORAGE_TEST)
+  return _sd.exists(filename, testState);
+#else
+  return _sd.exists(filename);
+#endif
+}
+
+bool StorageProvider::_mkdir(const char* filename, void* testState = nullptr) {
+#if defined(__SDSTORAGE_TEST)
+  return _sd.mkdir(filename, testState);
+#else
+  return _sd.mkdir(filename);
+#endif
+}
+
+void StorageProvider::_writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  dest = _sd.writeTxnFileStream(filename, testState);
+#else
+  File file = _sd.open(filename, FILE_WRITE);
+  dest = &file;
+#endif
+  _streams.send(dest, dto);
+#if (!defined(__SDSTORAGE_TEST))
+  file.close();
+#endif
+}
+
+bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
+  bool isDir = false;
+#if defined(__SDSTORAGE_TEST)
+  isDir = _sd.isDirectory(filename, testState);
+#else
+  File file = _sd.open(filename);
+  isDir = file.isDirectory();
+  file.close();
+#endif
+  return isDir;
+}
+
+bool StorageProvider::_remove(const char* filename, void* testState = nullptr) {
+#if defined(__SDSTORAGE_TEST)
+  return _sd.remove(filename, testState);
+#else
+  return _sd.remove(filename);
+#endif
+}
+
+bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, void* testState = nullptr) {
+#if defined(__SDSTORAGE_TEST)
+  return _sd.rename(oldFilename, newFilename, testState);
+#else
+  return _sd.rename(oldFilename, newFilename);
+#endif
+}
+
