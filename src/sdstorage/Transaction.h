@@ -39,7 +39,7 @@ class Transaction: public StreamableDTO {
     static StreamableDTO* _locks; // file access locks
 
     // Sets the _isCommitted flag to true
-    // void setCommitted();
+    void setCommitted();
 
     // Filename of this transaction's file: <workDir>/<id>.<extension>
     // Returns a dynamically allocated char[] must be released by the caller

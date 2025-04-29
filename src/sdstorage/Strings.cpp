@@ -42,4 +42,21 @@ namespace SDStorageStrings {
     return result;    
   }
 
+  bool endsWith(const char* str, const char* suffix) {
+    if (!str || !suffix) return false;
+    size_t strLen = strlen(str);
+    size_t suffixLen = strlen(suffix);
+    if (suffixLen > strLen) return false;
+    return strcmp(str + (strLen - suffixLen), suffix) == 0;
+  }
+
+  bool endsWith(const char* str, const __FlashStringHelper* suffix) {
+    if (!str || !suffix) return false;
+    char* suffixRAM = strdup(suffix);
+    bool result = endsWith(str, suffixRAM);
+    free(suffixRAM);
+    return result;
+  }
+
+
 }

@@ -31,6 +31,67 @@ bool SDStorage::begin(void* testState) {
 }
 
 /*
+ * Populates the DTO with data read from a file (after prepending the root dir
+ * on the filename if necessary)
+ */
+bool SDStorage::load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr) {
+  char* resolvedFilename = _fileHelper.canonicalFilename(filename, isFilenamePmem);
+  bool result = false;
+  if (_storageProvider._exists(resolvedFilename, testState)) {
+    result = _storageProvider._loadFromStream(resolvedFilename, dto, testState);
+  }
+  if (resolvedFilename != filename) delete[] resolvedFilename;
+  return result;
+}
+
+bool SDStorage::load(const __FlashStringHelper* filename, StreamableDTO* dto, void* testState = nullptr) {
+  return load(reinterpret_cast<const char*>(filename), dto, true, testState);
+}
+
+/*
+ * Writes the DTO data with data to a file (after prepending the root dir on
+ * the filename if necessary). If no transaction is provided, the write is
+ * auto-committed.
+ */
+bool SDStorage::save(const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false) {
+  return save(nullptr, filename, dto, txn, isFilenamePmem);
+}
+
+bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false) {
+  char* resolvedFilename = _fileHelper.canonicalFilename(filename, isFilenamePmem);
+  bool implicitTx = false;
+  if (txn == nullptr) {
+    // make an implicit, single-file transaction
+    txn = beginTxn(testState, resolvedFilename);
+    if (!txn) {
+      if (resolvedFilename) delete[] resolvedFilename;
+      return false;
+    }
+    implicitTx = true;
+  }
+  char* tmpFilename = _txnManager->getTmpFilename(txn, resolvedFilename);  
+  bool result = true;
+  if (tmpFilename && strlen(tmpFilename) > 0) {
+    _storageProvider._writeToStream(tmpFilename, dto, testState);
+    if (implicitTx) {
+      result = commitTxn(txn, testState);
+    }
+  } else {
+    result = false;    
+  }
+  if (resolvedFilename) delete[] resolvedFilename;
+  return result;
+}
+
+bool SDStorage::save(const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
+  return save(nullptr, filename, dto, txn);
+}
+
+bool SDStorage::save(void* testState, const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
+  return save(testState, reinterpret_cast<const char*>(filename), dto, txn, true);
+}
+
+/*
  * Returns true if the file exists (after prepending the root dir on the 
  * filename if necessary)
  */

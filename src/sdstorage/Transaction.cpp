@@ -62,9 +62,9 @@ char* Transaction::getFilename() {
   return out;
 }
 
-// void Transaction::setCommitted() {
-//   _isCommitted = true;
-// }
+void Transaction::setCommitted() {
+  _isCommitted = true;
+}
 
 char* Transaction::getTmpFilename(const char* filename, bool isPmem = false) {
   return get(filename, isPmem);

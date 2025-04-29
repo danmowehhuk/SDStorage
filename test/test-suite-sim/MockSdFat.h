@@ -27,14 +27,19 @@ class MockSdFat {
       bool onRemoveReturn = false;
       bool onRenameReturn = false;
       char* mkdirCaptor = nullptr;
+      char* onLoadData = nullptr;
+      char* loadFilenameCaptor = nullptr;
       char* writeTxnFilenameCaptor = nullptr;
       char* removeCaptor = nullptr;
       char* renameOldCaptor = nullptr;
       char* renameNewCaptor = nullptr;
+      StringStream writeDataCaptor;
       StringStream writeTxnDataCaptor;
 
       ~TestState() {
         if (mkdirCaptor) free(mkdirCaptor);
+        if (onLoadData) free(onLoadData);
+        if (loadFilenameCaptor) free(loadFilenameCaptor);
         if (writeTxnFilenameCaptor) free(writeTxnFilenameCaptor);
         if (removeCaptor) free(removeCaptor);
         if (renameOldCaptor) free(renameOldCaptor);
@@ -85,9 +90,23 @@ class MockSdFat {
       return ts->onRenameReturn;
     };
 
+    Stream* loadFileStream(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->loadFilenameCaptor) free(ts->loadFilenameCaptor);
+      ts->loadFilenameCaptor = nullptr;
+      ts->loadFilenameCaptor = strdup(filename);
+      StringStream* ss = new StringStream(ts->onLoadData);
+      return ss;
+    };
+
     bool isDirectory(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
       return ts->onIsDirectoryReturn;
+    };
+
+    Stream* writeFileStream(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      return &(ts->writeDataCaptor);
     };
 
     Stream* writeTxnFileStream(const char* filename, void* testState) {

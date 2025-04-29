@@ -2,6 +2,7 @@
 #define _SDStorage_StorageProvider_h
 
 
+#include <StreamableDTO.h>
 #include <StreamableManager.h>
 #if defined(__SDSTORAGE_TEST)
   #include "../../test/test-suite-sim/MockSdFat.h"
@@ -39,6 +40,8 @@ class StorageProvider {
      */
     bool _exists(const char* filename, void* testState = nullptr);
     bool _mkdir(const char* filename, void* testState = nullptr);
+    bool _loadFromStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
+    void _writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
     void _writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
     bool _isDir(const char* filename, void* testState = nullptr);
     bool _remove(const char* filename, void* testState = nullptr);

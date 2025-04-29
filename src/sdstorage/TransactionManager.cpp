@@ -1,31 +1,34 @@
 #include "TransactionManager.h"
 
-// bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) {
-//   char* oldName = txn->getFilename();
-//   txn->setCommitted();
-//   char* newName = txn->getFilename();
-//   bool commitErr = true;
-//   do {
-//     if (!_storageProvider->_rename(oldName, newName, testState)) break;
-// //    if (!_applyChanges(txn, testState)) break;
-//     delete[] oldName;
-//     delete[] newName;
-//     cleanupTxn(txn, testState);
-//     commitErr = false;
-//   } while (false);
-//   if (commitErr) {
-//     /*
-//      * Something failed that should not have failed. This means the files might
-//      * be in an inconsistent state. Call the supplied errFunction.
-//      */
-// #if defined(DEBUG)
-//     Serial.println(F("ERROR: TransactionManager::commitTxn"));
-// #endif
-// //    if (_errFunction != nullptr) _errFunction();
-//     return false;
-//   }
-//   return true;
-// }
+bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) {
+  char* oldName = txn->getFilename();
+  txn->setCommitted();
+  char* newName = txn->getFilename();
+  bool commitSuccess = false;
+
+  do {
+    if (!_storageProvider->_rename(oldName, newName, testState)) break;
+    if (!applyChanges(txn, testState)) break;
+    commitSuccess = true;
+  } while (false);
+
+  delete[] oldName;
+  delete[] newName;
+
+  if (!commitSuccess) {
+    /*
+     * Something failed that should not have failed. This means the files might
+     * be in an inconsistent state. Call the supplied errFunction.
+     */
+#if defined(DEBUG)
+    Serial.println(F("ERROR: TransactionManager::commitTxn"));
+#endif
+    if (_errFunction != nullptr) _errFunction();
+  }
+
+  cleanupTxn(txn, testState);
+  return commitSuccess;
+}
 
 bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
 
@@ -160,3 +163,53 @@ void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr)
   delete[] txnFilename;
   delete txn;
 }
+
+bool TransactionManager::applyChanges(Transaction* txn, void* testState = nullptr) {
+
+  auto applyChangesFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valuePmem, void* capture) -> bool {
+    TransactionCapture* c = static_cast<TransactionCapture*>(capture);
+    if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
+      // tombstone - delete the file
+      c->storageProvider->_remove(filename, c->ts);
+    } else if (!c->storageProvider->_exists(tmpFilename, c->ts)) {
+      // No changes to apply (tmpFile was never written)
+    } else {
+      if (c->storageProvider->_exists(filename, c->ts) && !c->storageProvider->_remove(filename, c->ts)) {
+#if defined(DEBUG)
+        Serial.print(F("Old file could not be removed: "));
+        Serial.println(filename);
+#endif
+        c->success = false;
+        return false;
+      }
+      if (!c->storageProvider->_rename(tmpFilename, filename, c->ts)) {
+#if defined(DEBUG)
+        Serial.print(F("Could not move "));
+        Serial.print(tmpFilename);
+        Serial.print(F(" to "));
+        Serial.println(filename);
+#endif
+        c->success = false;
+        return false;
+      }
+    }
+    return true;
+  };
+
+  TransactionCapture capture(_storageProvider, testState);
+  txn->processEntries(applyChangesFunction, &capture);
+  if (!capture.success) {
+#if defined(DEBUG)
+    /*
+     * One of the changes was not successfully applied. This leaves the
+     * data in an inconsistent state that must be manually repaired.
+     *
+     * If this ever happens, it's a bug!
+     */
+    Serial.println(F("ERROR: All transaction changes NOT applied!"));
+#endif
+    return false;
+  }
+  return true;
+}
+

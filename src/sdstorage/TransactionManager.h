@@ -15,8 +15,8 @@ static const char _SDSTORAGE_TOMBSTONE[]         PROGMEM = "{TOMBSTONE}";
 class TransactionManager {
 
   public:
-    TransactionManager(FileHelper* fileHelper, StorageProvider* storageProvider):
-        _fileHelper(fileHelper), _storageProvider(storageProvider) {};
+    TransactionManager(FileHelper* fileHelper, StorageProvider* storageProvider, void (*errFunction)() = nullptr):
+        _fileHelper(fileHelper), _storageProvider(storageProvider), _errFunction(errFunction) {};
 
     // Disable moving and copying
     TransactionManager(TransactionManager&& other) = delete;
@@ -26,6 +26,7 @@ class TransactionManager {
 
 
   private:
+    void (*_errFunction)();
     FileHelper* _fileHelper;
     StorageProvider* _storageProvider;
 
@@ -44,7 +45,7 @@ class TransactionManager {
     /*
      * Applies the transaction's changes and unlocks the files.
      */
-    // bool commitTxn(Transaction* txn, void* testState = nullptr);
+    bool commitTxn(Transaction* txn, void* testState = nullptr);
 
     /*
      * Cancels all the transaction's changes and unlocks the files.
@@ -67,6 +68,7 @@ class TransactionManager {
     char* getTmpFilename(Transaction* txn, const char* filename, bool isPmem = false);
     // char* getTmpFilename(Transaction* txn, const __FlashStringHelper* filename);
     void cleanupTxn(Transaction* txn, void* testState = nullptr);
+    bool applyChanges(Transaction* txn, void* testState = nullptr);
 
     // For passing data in/out of Transaction-related lambda functions
     struct TransactionCapture {

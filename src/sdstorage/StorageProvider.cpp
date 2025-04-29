@@ -66,3 +66,34 @@ bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, 
 #endif
 }
 
+bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+  Stream* src;
+#if defined(__SDSTORAGE_TEST)
+  src = _sd.loadFileStream(filename, testState);
+#else
+  File file = _sd.open(filename, FILE_READ);
+  src = &file;
+#endif
+  bool result = _streams.load(src, dto);  
+#if defined(__SDSTORAGE_TEST)
+  StringStream* ss = static_cast<StringStream*>(src);
+  delete ss;
+#else
+  file.close();
+#endif
+  return result;
+}
+
+void StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  dest = _sd.writeFileStream(filename, testState);
+#else
+  File file = _sd.open(filename, FILE_WRITE);
+  dest = &file;
+#endif
+  _streams.send(dest, dto);  
+#if (!defined(__SDSTORAGE_TEST))
+  file.close();
+#endif
+}

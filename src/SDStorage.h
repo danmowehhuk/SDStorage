@@ -21,8 +21,6 @@
 #include "sdstorage/StorageProvider.h"
 #include "sdstorage/Strings.h"
 
-static const char _SDSTORAGE_INDEX_EXTSN[]       PROGMEM = ".idx";
-
 class SDStorage {
 
   public:
@@ -43,7 +41,7 @@ class SDStorage {
      */
     SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr): 
           _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin), _errFunction(errFunction) {
-        _txnManager = new TransactionManager(&_fileHelper, &_storageProvider);
+        _txnManager = new TransactionManager(&_fileHelper, &_storageProvider, _errFunction);
     };
     SDStorage(uint8_t sdCsPin, const char* rootDir, void (*errFunction)() = nullptr): 
           SDStorage(sdCsPin, rootDir, false, errFunction) {};
@@ -69,10 +67,18 @@ class SDStorage {
     bool begin(void* testState = nullptr);
 
     /*
+     * FILE OPERATIONS
+     *
      * The following prepend the path with the root directory if necessary
      */
     bool mkdir(const char* dirName, void* testState = nullptr);
     bool mkdir(const __FlashStringHelper* dirName, void* testState = nullptr);
+    bool load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr);
+    bool load(const __FlashStringHelper* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool save(const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
+    bool save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
+    bool save(const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
+    bool save(void* testState, const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
     bool exists(const char* filename, void* testState = nullptr);
     bool exists(const __FlashStringHelper* filename, void* testState = nullptr);
     bool erase(const char* filename, Transaction* txn = nullptr);
@@ -81,7 +87,10 @@ class SDStorage {
     bool erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr);
 
     /*
-     * Create a new transaction, locking the affected files
+     * TRANSACTION OPERATIONS
+     *
+     * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
+     * or a mixture of both. The root directory will be prepended if necessary.
      */
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames) {
@@ -103,9 +112,9 @@ class SDStorage {
     /*
      * Applies the transaction's changes and unlocks the files.
      */
-    // bool commitTxn(Transaction* txn, void* testState = nullptr) {
-    //   return _txnManager->commitTxn(txn, testState);
-    // };
+    bool commitTxn(Transaction* txn, void* testState = nullptr) {
+      return _txnManager->commitTxn(txn, testState);
+    };
 
     /*
      * Cancels all the transaction's changes and unlocks the files.

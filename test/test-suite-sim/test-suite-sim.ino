@@ -12,9 +12,14 @@ bool beginSuccess = false;
 
 using namespace SDStorageStrings;
 
+bool errThrown = false;
+void errFunction() {
+  errThrown = true;
+}
+
 void before() {
   if (!sdStorage) {
-    sdStorage = new SDStorage(12, reinterpret_cast<const __FlashStringHelper *>(_MOCK_TESTROOT));
+    sdStorage = new SDStorage(12, reinterpret_cast<const __FlashStringHelper *>(_MOCK_TESTROOT), errFunction);
     MockSdFat::TestState ts;
     ts.onExistsReturn[0] = false; // root exists?
     ts.onExistsReturn[1] = false; // workdir exists?
@@ -271,6 +276,76 @@ void testAbortTransaction_abortFails(TestInvocation* t) {
   t->assert(!sdStorage->abortTxn(txn, &ts), F("abortTxn should have failed"));
 }
 
+void testCommitTransaction_happyPath(TestInvocation* t) {
+  t->setName(F("Commit transaction - happy path"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // newFile.dat does not exist (new file)
+  ts.onExistsReturn[1] = true; // /TESTROOT exists
+  ts.onExistsReturn[2] = false; // newFile's tmp file does not exist yet
+  ts.onExistsReturn[3] = true; // newFile's tmp file does exist now
+  ts.onExistsReturn[4] = true; // newFile.dat exists (to remove before replace)
+  ts.onIsDirectoryReturn = true; // /TESTROOT is a directory
+
+  Transaction* txn = sdStorage->beginTxn(&ts, "newFile.dat");
+  StreamableDTO newDto;
+  t->assert(txn, F("beginTxn failed"));
+
+  ts.onRenameReturn = true; // .txn file renamed to .cmt, tmpFile renamed to newFile.dat
+  ts.onRemoveReturn = true; // .cmt file removed
+  t->assert(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+  t->assertEqual(ts.renameNewCaptor, F("/TESTROOT/newFile.dat"), F("newFile.dat not written"));
+  t->assert(contains(ts.removeCaptor, F(".cmt")) != -1, F(".cmt file should have been last to remove"));
+}
+
+void testCommitTransaction_failure(TestInvocation* t) {
+  t->setName(F("Commit transaction - failure"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // newFile.dat does not exist (new file)
+  ts.onExistsReturn[1] = true; // /TESTROOT exists
+  ts.onExistsReturn[2] = false; // newFile's tmp file does not exist yet
+  ts.onExistsReturn[3] = true; // newFile's tmp file does exist now
+  ts.onExistsReturn[4] = true; // newFile.dat exists (to remove before replace)
+  ts.onIsDirectoryReturn = true; // /TESTROOT is a directory
+
+  Transaction* txn = sdStorage->beginTxn(&ts, "newFile.dat");
+  StreamableDTO newDto;
+  t->assert(txn, F("beginTxn failed"));
+
+  ts.onRenameReturn = false; // cause a failure
+  ts.onRemoveReturn = true; // .cmt file removed
+  t->assert(!sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+  t->assert(errThrown, F("Expected errFunction to be invoked"));
+}
+
+void testLoadFile(TestInvocation* t) {
+  t->setName(F("Load a mock file from a stream"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myFile.dat exists?
+
+  ts.onLoadData = strdup(F("foo=bar\n"));
+  StreamableDTO dto;
+  t->assert(sdStorage->load(F("myFile.dat"), &dto, &ts), F("Load failed"));
+  t->assertEqual(dto.get(F("foo")), F("bar"));
+}
+
+void testSaveFile_noTxn(TestInvocation* t) {
+  t->setName(F("Save a file without a transaction"));
+  MockSdFat::TestState ts;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  ts.onExistsReturn[0] = false; // /TESTROOT/writeMe.dat exists?
+  ts.onExistsReturn[1] = true;  // /TESTROOT exists?
+  ts.onIsDirectoryReturn = true; // /TESTROOT is a dir
+
+  StreamableDTO dto;
+  dto.put("def", "ghi");
+  t->assert(sdStorage->save(&ts, F("writeMe.dat"), &dto), F("Save failed"));
+  t->assertEqual(ts.writeDataCaptor.get(), F("def=ghi\n"), F("Unexpected data written"));
+  t->assert(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
+}
+
+
+
 void setup() {
   Serial.begin(9600);
   while (!Serial);
@@ -292,7 +367,11 @@ void setup() {
     testTransactionalEraseFile_happyPath,
     testTransactionalEraseFile_notInTransaction,
     testAbortTransaction_happyPath,
-    testAbortTransaction_abortFails
+    testAbortTransaction_abortFails,
+    testCommitTransaction_happyPath,
+    testCommitTransaction_failure,
+    testLoadFile,
+    testSaveFile_noTxn
   };
 
   runTestSuiteShowMem(tests, before, nullptr);
