@@ -31,6 +31,9 @@ class SDStorageTestHelper {
     char* getFilenameFromFullName(SDStorage* sdStorage, __FlashStringHelper* filename) {
       return sdStorage->_fileHelper.getFilenameFromFullName(filename);
     }
+    char* getIndexFilename(SDStorage* sdStorage, __FlashStringHelper* filename) {
+      return sdStorage->_idxManager->indexFilename(filename);
+    }
 };
 
 

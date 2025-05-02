@@ -28,13 +28,17 @@ class MockSdFat {
       bool onRenameReturn = false;
       char* mkdirCaptor = nullptr;
       char* onLoadData = nullptr;
+      char* onReadIdxData = nullptr;
       char* loadFilenameCaptor = nullptr;
       char* writeTxnFilenameCaptor = nullptr;
       char* removeCaptor = nullptr;
       char* renameOldCaptor = nullptr;
       char* renameNewCaptor = nullptr;
+      char* readIdxFilenameCaptor = nullptr;
+      char* writeIdxFilenameCaptor = nullptr;
       StringStream writeDataCaptor;
       StringStream writeTxnDataCaptor;
+      StringStream writeIdxDataCaptor;
 
       ~TestState() {
         if (mkdirCaptor) free(mkdirCaptor);
@@ -44,11 +48,15 @@ class MockSdFat {
         if (removeCaptor) free(removeCaptor);
         if (renameOldCaptor) free(renameOldCaptor);
         if (renameNewCaptor) free(renameNewCaptor);
+        if (readIdxFilenameCaptor) free(readIdxFilenameCaptor);
+        if (writeIdxFilenameCaptor) free(writeIdxFilenameCaptor);
         mkdirCaptor = nullptr;
         writeTxnFilenameCaptor = nullptr;
         removeCaptor = nullptr;
         renameOldCaptor = nullptr;
         renameNewCaptor = nullptr;
+        readIdxFilenameCaptor = nullptr;
+        writeIdxFilenameCaptor = nullptr;
       };
     };
 
@@ -115,6 +123,24 @@ class MockSdFat {
       ts->writeTxnFilenameCaptor = nullptr;
       ts->writeTxnFilenameCaptor = strdup(filename);
       return &(ts->writeTxnDataCaptor);
+    };
+
+    Stream* readIndexFileStream(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->writeIdxFilenameCaptor) free(ts->writeTxnFilenameCaptor);
+      ts->writeTxnFilenameCaptor = nullptr;
+      ts->writeIdxFilenameCaptor = strdup(filename);
+      ts->readIdxFilenameCaptor = filename;
+      StringStream* ss = new StringStream(ts->onReadIdxData);
+      return ss;
+    };
+
+    Stream* writeIndexFileStream(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->writeIdxFilenameCaptor) free(ts->writeTxnFilenameCaptor);
+      ts->writeTxnFilenameCaptor = nullptr;
+      ts->writeIdxFilenameCaptor = strdup(filename);
+      return &(ts->writeIdxDataCaptor);
     };
 
 };

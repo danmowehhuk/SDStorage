@@ -97,3 +97,45 @@ void StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, v
   file.close();
 #endif
 }
+
+void StorageProvider::_writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr) {
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  dest = _sd.writeIndexFileStream(indexFilename, testState);
+#else
+  File file = _sd.open(indexFilename, FILE_WRITE);
+  dest = &file;
+#endif
+  for (size_t i = 0; i < strlen(line); i++) {
+    dest->write(line[i]);
+  }
+  dest->write('\n');
+#if (!defined(__SDSTORAGE_TEST))
+  file.close();
+#endif
+}
+
+void StorageProvider::_updateIndex(
+      const char* indexFilename, const char* tmpFilename, 
+      StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
+  Stream* src;
+  Stream* dest;
+#if defined(__SDSTORAGE_TEST)
+  src = _sd.readIndexFileStream(indexFilename, testState);
+  dest = _sd.writeIndexFileStream(tmpFilename, testState);
+#else
+  File srcFile = _sd.open(indexFilename, FILE_READ);
+  File destFile = _sd.open(tmpFilename, FILE_WRITE);
+  src = &srcFile;
+  dest = &destFile;
+#endif
+  _streams.pipe(src, dest, filter, statePtr);
+#if defined(__SDSTORAGE_TEST)
+  StringStream* sss = static_cast<StringStream*>(src);
+  delete sss;
+#else
+  srcFile.close();
+  destFile.close();
+#endif
+}
+

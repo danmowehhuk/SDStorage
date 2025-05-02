@@ -69,6 +69,7 @@ class TransactionManager {
     // char* getTmpFilename(Transaction* txn, const __FlashStringHelper* filename);
     void cleanupTxn(Transaction* txn, void* testState = nullptr);
     bool applyChanges(Transaction* txn, void* testState = nullptr);
+    bool finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState);
 
     // For passing data in/out of Transaction-related lambda functions
     struct TransactionCapture {
@@ -80,6 +81,7 @@ class TransactionManager {
     };
 
     friend class SDStorage;
+    friend class IndexManager;
 
 };
 

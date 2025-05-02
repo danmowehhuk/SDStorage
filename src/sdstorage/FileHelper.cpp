@@ -52,9 +52,11 @@ char* FileHelper::canonicalFilename(const char* filename, bool isFilenamePmem = 
     size_t totalLen = rootLen + filenameLen + (filenameRAM[0] == '/' ? 1 : 2);
     resolvedName = new char[totalLen]();
     if (filenameRAM[0] == '/') {
-      snprintf_P(resolvedName, totalLen, (const char*)F("%s%s"), _rootDir, filenameRAM);
+      static const char fmt[] PROGMEM = "%s%s";
+      snprintf_P(resolvedName, totalLen, fmt, _rootDir, filenameRAM);
     } else {
-      snprintf_P(resolvedName, totalLen, (const char*)F("%s/%s"), _rootDir, filenameRAM);
+      static const char fmt[] PROGMEM = "%s/%s";
+      snprintf_P(resolvedName, totalLen, fmt, _rootDir, filenameRAM);
     }
   }
   if (isFilenamePmem) delete[] filenameRAM;

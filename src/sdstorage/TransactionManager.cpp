@@ -152,6 +152,21 @@ char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename,
 //   return getTmpFilename(txn, reinterpret_cast<const char*>(filename), true);
 // }
 
+bool TransactionManager::finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState) {
+  if (autoCommit) {
+    if (success) {
+      return commitTxn(txn, testState);
+    } else {
+      abortTxn(txn, testState);
+      return false;
+    }
+  } else if (success) {
+    return true;
+  } else {
+    return false;
+  }
+}
+
 void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr) {
   char* txnFilename = txn->getFilename();
   if (!_storageProvider->_remove(txnFilename, testState)) {

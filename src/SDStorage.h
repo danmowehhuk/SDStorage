@@ -16,6 +16,7 @@
 #include <StreamableDTO.h>
 #include <StreamableManager.h>
 #include "sdstorage/FileHelper.h"
+#include "sdstorage/IndexManager.h"
 #include "sdstorage/Transaction.h"
 #include "sdstorage/TransactionManager.h"
 #include "sdstorage/StorageProvider.h"
@@ -42,6 +43,7 @@ class SDStorage {
     SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr): 
           _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin), _errFunction(errFunction) {
         _txnManager = new TransactionManager(&_fileHelper, &_storageProvider, _errFunction);
+        _idxManager = new IndexManager(&_fileHelper, &_storageProvider, _txnManager);
     };
     SDStorage(uint8_t sdCsPin, const char* rootDir, void (*errFunction)() = nullptr): 
           SDStorage(sdCsPin, rootDir, false, errFunction) {};
@@ -50,6 +52,7 @@ class SDStorage {
     SDStorage() = delete;
     ~SDStorage() {
       if (_txnManager) delete _txnManager;
+      if (_idxManager) delete _idxManager;
     }
 
     // Disable moving and copying
@@ -85,6 +88,17 @@ class SDStorage {
     bool erase(const __FlashStringHelper* filename, Transaction* txn = nullptr);
     bool erase(void* testState, const char* filename, Transaction* txn = nullptr);
     bool erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr);
+
+    /*
+     * INDEX OPERATIONS
+     * 
+     */
+    bool idxUpsert(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert(const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert_P(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert(void* testState, const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert_P(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
 
     /*
      * TRANSACTION OPERATIONS
@@ -131,6 +145,7 @@ class SDStorage {
     FileHelper _fileHelper;
     StorageProvider _storageProvider;
     TransactionManager* _txnManager = nullptr;
+    IndexManager* _idxManager = nullptr;
 
 };
 

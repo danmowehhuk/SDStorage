@@ -11,6 +11,7 @@ namespace SDStorageStrings {
   bool contains(const char* str, const __FlashStringHelper* needle);
   bool endsWith(const char* str, const char* suffix);
   bool endsWith(const char* str, const __FlashStringHelper* suffix);
+  bool isEmpty(const char* str);
 
 }
 

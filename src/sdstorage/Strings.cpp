@@ -58,5 +58,8 @@ namespace SDStorageStrings {
     return result;
   }
 
+  bool isEmpty(const char* str) {
+    return (!str || str[0] == '\0');
+  };
 
 }

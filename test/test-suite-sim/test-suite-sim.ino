@@ -344,6 +344,13 @@ void testSaveFile_noTxn(TestInvocation* t) {
   t->assert(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
 }
 
+void testIdxFilename(TestInvocation* t) {
+  t->setName(F("Index filename"));
+  char* idxFilename = helper.getIndexFilename(sdStorage, F("foo"));
+  t->assertEqual(idxFilename, F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
+  delete[] idxFilename;
+}
+
 
 
 void setup() {
@@ -371,7 +378,8 @@ void setup() {
     testCommitTransaction_happyPath,
     testCommitTransaction_failure,
     testLoadFile,
-    testSaveFile_noTxn
+    testSaveFile_noTxn,
+    testIdxFilename
   };
 
   runTestSuiteShowMem(tests, before, nullptr);

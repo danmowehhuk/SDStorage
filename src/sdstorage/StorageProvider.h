@@ -46,9 +46,13 @@ class StorageProvider {
     bool _isDir(const char* filename, void* testState = nullptr);
     bool _remove(const char* filename, void* testState = nullptr);
     bool _rename(const char* oldFilename, const char* newFilename, void* testState = nullptr);
+    void _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
+    void _updateIndex(const char* indexFilename, const char* tmpFilename, 
+          StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
 
     friend class SDStorage;
     friend class TransactionManager;
+    friend class IndexManager;
 
 };
 

@@ -8,7 +8,8 @@ using namespace SDStorageStrings;
 
 Transaction::Transaction(const char* workDir) : StreamableDTO() {
   char idBuffer[12];
-  snprintf_P(idBuffer, sizeof(idBuffer), (const char*)F("%u"), _idSeq++);
+  static const char fmt[] PROGMEM = "%u";
+  snprintf_P(idBuffer, sizeof(idBuffer), fmt, _idSeq++);
   size_t workDirLen = strlen(workDir);
   size_t idLen = strlen(idBuffer);
   _baseFilename = new char[workDirLen + idLen + 2](); // +1 for '/' +1 for '\0'
@@ -35,11 +36,13 @@ void Transaction::add(const char* filename, const char* workDir) {
   }
   _locks->putEmpty(filename);
   char idBuffer[12];
-  snprintf_P(idBuffer, sizeof(idBuffer), (const char*)F("%u"), _idSeq++);
+  static const char fmt[] PROGMEM = "%u";
+  snprintf_P(idBuffer, sizeof(idBuffer), fmt, _idSeq++);
   size_t bufferSize = strlen(workDir) + 1 + strlen(idBuffer) + 5;
   char tmpFilename[bufferSize];
   char* extRAM = strdup_P(_SDSTORAGE_TXN_TMP_EXTSN);
-  snprintf_P(tmpFilename, bufferSize, (const char*)F("%s/%s%s"), workDir, idBuffer, extRAM);
+  static const char fmt1[] PROGMEM = "%s/%s%s";
+  snprintf_P(tmpFilename, bufferSize, fmt1, workDir, idBuffer, extRAM);
   free(extRAM);
   put(filename, tmpFilename);
 }
@@ -57,7 +60,8 @@ char* Transaction::getFilename() {
   const char* extRAM = strdup_P(extPmem);
   size_t totalLen = strlen(_baseFilename) + strlen(extRAM) + 1;
   char* out = new char[totalLen]();
-  snprintf_P(out, totalLen, (const char*)F("%s%s"), _baseFilename, extRAM);
+  static const char fmt[] PROGMEM = "%s%s";
+  snprintf_P(out, totalLen, fmt, _baseFilename, extRAM);
   free(extRAM);
   return out;
 }
