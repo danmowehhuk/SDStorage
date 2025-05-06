@@ -24,18 +24,21 @@ bool StorageProvider::_mkdir(const char* filename, void* testState = nullptr) {
 #endif
 }
 
-void StorageProvider::_writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+bool StorageProvider::_writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
   Stream* dest;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeTxnFileStream(filename, testState);
+  if (!dest) return false;
 #else
   File file = _sd.open(filename, FILE_WRITE);
+  if (!file) return false;
   dest = &file;
 #endif
   _streams.send(dest, dto);
 #if (!defined(__SDSTORAGE_TEST))
   file.close();
 #endif
+  return true;
 }
 
 bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
@@ -84,26 +87,31 @@ bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, 
   return result;
 }
 
-void StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+bool StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
   Stream* dest;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeFileStream(filename, testState);
+  if (!dest) return false;
 #else
   File file = _sd.open(filename, FILE_WRITE);
+  if (!file) return false;  
   dest = &file;
 #endif
   _streams.send(dest, dto);  
 #if (!defined(__SDSTORAGE_TEST))
   file.close();
 #endif
+  return true;
 }
 
-void StorageProvider::_writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr) {
+bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr) {
   Stream* dest;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeIndexFileStream(indexFilename, testState);
+  if (!dest) return false;
 #else
   File file = _sd.open(indexFilename, FILE_WRITE);
+  if (!file) return false;
   dest = &file;
 #endif
   for (size_t i = 0; i < strlen(line); i++) {
@@ -113,9 +121,10 @@ void StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
 #if (!defined(__SDSTORAGE_TEST))
   file.close();
 #endif
+  return true;
 }
 
-void StorageProvider::_updateIndex(
+bool StorageProvider::_updateIndex(
       const char* indexFilename, const char* tmpFilename, 
       StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
   Stream* src;
@@ -125,7 +134,12 @@ void StorageProvider::_updateIndex(
   dest = _sd.writeIndexFileStream(tmpFilename, testState);
 #else
   File srcFile = _sd.open(indexFilename, FILE_READ);
+  if (!srcFile) return false;
   File destFile = _sd.open(tmpFilename, FILE_WRITE);
+  if (!destFile) {
+    srcFile.close();
+    return false;
+  }
   src = &srcFile;
   dest = &destFile;
 #endif
@@ -137,5 +151,6 @@ void StorageProvider::_updateIndex(
   srcFile.close();
   destFile.close();
 #endif
+  return true;
 }
 

@@ -2,6 +2,7 @@
 #define _SDStorage_TransactionManager_h
 
 
+#include "../Index.h"
 #include "FileHelper.h"
 #include "StorageProvider.h"
 #include "Strings.h"
@@ -38,9 +39,13 @@ class TransactionManager {
     template <typename... Args>
     Transaction* beginTxn(const __FlashStringHelper* filename, Args... moreFilenames);
     template <typename... Args>
+    Transaction* beginTxn(sdstorage::Index idx, Args... moreFilenames);
+    template <typename... Args>
     Transaction* beginTxn(void* testState, const char* filename, Args... moreFilenames);
     template <typename... Args>
     Transaction* beginTxn(void* testState, const __FlashStringHelper* filename, Args... moreFilenames);
+    template <typename... Args>
+    Transaction* beginTxn(void* testState, sdstorage::Index idx, Args... moreFilenames);
 
     /*
      * Applies the transaction's changes and unlocks the files.
@@ -59,6 +64,8 @@ class TransactionManager {
     bool _beginTxn(Transaction* txn, void* testState, const char* filename, Args... moreFilenames);
     template <typename... Args>
     bool _beginTxn(Transaction* txn, void* testState, const __FlashStringHelper* filename, Args... moreFilenames);
+    template <typename... Args>
+    bool _beginTxn(Transaction* txn, void* testState, sdstorage::Index idx, Args... moreFilenames);
     bool _beginTxn(Transaction* txn, void* testState) { return true; }; // termination case
 
     /*
@@ -66,7 +73,6 @@ class TransactionManager {
      */
     bool addFileToTxn(Transaction* txn, void* testState, const char* filename, bool isPmem = false);
     char* getTmpFilename(Transaction* txn, const char* filename, bool isPmem = false);
-    // char* getTmpFilename(Transaction* txn, const __FlashStringHelper* filename);
     void cleanupTxn(Transaction* txn, void* testState = nullptr);
     bool applyChanges(Transaction* txn, void* testState = nullptr);
     bool finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState);
@@ -98,14 +104,22 @@ Transaction* TransactionManager::beginTxn(const __FlashStringHelper* filename, A
 }
 
 template <typename... Args>
+Transaction* TransactionManager::beginTxn(sdstorage::Index idx, Args... moreFilenames) {
+  return beginTxn(nullptr, idx, moreFilenames...);
+}
+
+template <typename... Args>
 Transaction* TransactionManager::beginTxn(void* testState, const char* filename, Args... moreFilenames) {
-  Transaction* txn = new Transaction(_fileHelper->getWorkDir());
-  bool txnCreated = _beginTxn(txn, testState, filename, moreFilenames...);
-  if (txnCreated) {
-    char* txnFilename = txn->getFilename();
-    _storageProvider->_writeTxnToStream(txnFilename, txn, testState);
-    delete[] txnFilename;
-  } else {
+  Transaction* txn = new Transaction(_fileHelper);
+  bool success = false;
+  do {
+    if (!_beginTxn(txn, testState, filename, moreFilenames...)) break;
+    char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
+    if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+    if (!_storageProvider->_writeTxnToStream(txnFilename, txn, testState)) break;
+    success = true;
+  } while (false);
+  if (!success) {
     delete txn;
     txn = nullptr;
   }
@@ -121,6 +135,14 @@ Transaction* TransactionManager::beginTxn(void* testState, const __FlashStringHe
 }
 
 template <typename... Args>
+Transaction* TransactionManager::beginTxn(void* testState, sdstorage::Index idx, Args... moreFilenames) {
+  char filenameRAM[FileHelper::MAX_FILENAME_LENGTH];
+  _fileHelper->indexFilename(idx, filenameRAM, FileHelper::MAX_FILENAME_LENGTH);
+  Transaction* txn = beginTxn(testState, filenameRAM, moreFilenames...);
+  return txn;
+}
+
+template <typename... Args>
 bool TransactionManager::_beginTxn(Transaction* txn, void* testState, const char* filename, Args... moreFilenames) {
   if (!addFileToTxn(txn, testState, filename)) return false;
   return _beginTxn(txn, testState, moreFilenames...);
@@ -131,6 +153,20 @@ bool TransactionManager::_beginTxn(Transaction* txn, void* testState, const __Fl
   char* filenameRAM = strdup(filename);
   bool result = _beginTxn(txn, testState, filenameRAM, moreFilenames...);
   free(filenameRAM);
+  return result;
+}
+
+template <typename... Args>
+bool TransactionManager::_beginTxn(Transaction* txn, void* testState, sdstorage::Index idx, Args... moreFilenames) {
+  if (!idx.name) {
+#if (defined(DEBUG))
+    Serial.println(F("TransactionManager::beginTxn - index name cannot be empty"));
+#endif
+    return false;
+  }
+  char filenameRAM[FileHelper::MAX_FILENAME_LENGTH];
+  _fileHelper->indexFilename(idx, filenameRAM, FileHelper::MAX_FILENAME_LENGTH);
+  bool result = _beginTxn(txn, testState, filenameRAM, moreFilenames...);
   return result;
 }
 

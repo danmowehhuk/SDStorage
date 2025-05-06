@@ -49,18 +49,16 @@ void testConstructor(TestInvocation* t) {
 
 void testCanonicalFilename(TestInvocation* t) {
   t->setName(F("Filename resolution"));
-  char* resolvedName = helper.canonicalFilename(sdStorage, F("foo"));
+  char resolvedName[64];
+  t->assert(helper.canonicalFilename(sdStorage, helper.toFilename(F("foo")), resolvedName, 64), 
+        F("canonicalFilename call 1 failed"));
   t->assertEqual(resolvedName, F("/TESTROOT/foo"), F("Prepend root dir prefix failed"));
-  delete[] resolvedName;
-  resolvedName = nullptr;
-  resolvedName = helper.canonicalFilename(sdStorage, F("/foo"));
+  t->assert(helper.canonicalFilename(sdStorage, helper.toFilename(F("/foo")), resolvedName, 64), 
+        F("canonicalFilename call 2 failed"));
   t->assertEqual(resolvedName, F("/TESTROOT/foo"), F("Ignore leading slash failed"));
-  delete[] resolvedName;
-  resolvedName = nullptr;
-  resolvedName = helper.canonicalFilename(sdStorage, F("/TESTROOT/foo"));
+  t->assert(helper.canonicalFilename(sdStorage, helper.toFilename(F("/TESTROOT/foo")), resolvedName, 64),
+        F("canonicalFilename call 3 failed"));
   t->assertEqual(resolvedName, F("/TESTROOT/foo"), F("Ignore already under rootDir"));
-  delete[] resolvedName;
-  resolvedName = nullptr;
 }
 
 void testMakeDir(TestInvocation* t) {
@@ -96,66 +94,49 @@ void testIsValidFAT16Filename(TestInvocation* t) {
 
 void testGetPathFromFilename(TestInvocation* t) {
   t->setName(F("Extract path from filename"));
-  char* path = helper.getPathFromFilename(sdStorage, F(""));
-  t->assert(!path, F("Empty filename"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("  "));
-  t->assert(!path, F("Filename only spaces"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("bar"));
-  t->assert(!path, F("No path component"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("/bar"));
+  char path[64];
+  t->assert(!helper.getPathFromFilename(sdStorage, F(""), path, 64), 
+        F("should have failed (empty)"));
+  t->assert(!helper.getPathFromFilename(sdStorage, F("  "), path, 64),
+        F("should have failed (whitespace)"));
+  t->assert(!helper.getPathFromFilename(sdStorage, F("bar"), path, 64),
+        F("should have failed (no slash)"));
+  t->assert(helper.getPathFromFilename(sdStorage, F("/bar"), path, 64),
+        F("getPathFromFilename call 1 failed"));
   t->assertEqual(path, F("/"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("foo/bar"));
+  t->assert(helper.getPathFromFilename(sdStorage, F("foo/bar"), path, 64),
+        F("getPathFromFilename call 2 failed"));
   t->assertEqual(path, F("foo"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("/foo/bar"));
+  t->assert(helper.getPathFromFilename(sdStorage, F("/foo/bar"), path, 64),
+        F("getPathFromFilename call 3 failed"));
   t->assertEqual(path, F("/foo"));
-  if (path) delete[] path;
-  path = nullptr;
-  path = helper.getPathFromFilename(sdStorage, F("/foo/bar/baz.txt"));
+  t->assert(helper.getPathFromFilename(sdStorage, F("/foo/bar/baz.txt"), path, 64),
+        F("getPathFromFilename call 4 failed"));
   t->assertEqual(path, F("/foo/bar"));
-  if (path) delete[] path;
-  path = nullptr;
 }
 
 void testGetFilenameFromFullName(TestInvocation* t) {
   t->setName(F("Extract short file name from filename"));
-  char* filename = helper.getFilenameFromFullName(sdStorage, F(""));
-  t->assert(!filename, F("Empty filename"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("  "));
-  t->assert(!filename, F("Filename only spaces"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("bar"));
+  char filename[64];
+  t->assert(!helper.getFilenameFromFullName(sdStorage, F(""), filename, 64), 
+        F("should have failed (empty)"));
+  t->assert(!helper.getFilenameFromFullName(sdStorage, F("  "), filename, 64), 
+        F("should have failed (whitespace)"));
+  t->assert(helper.getFilenameFromFullName(sdStorage, F("bar"), filename, 64), 
+        F("getFilenameFromFullName call 1 failed"));
   t->assertEqual(filename, F("bar"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("/bar"));
+  t->assert(helper.getFilenameFromFullName(sdStorage, F("/bar"), filename, 64), 
+        F("getFilenameFromFullName call 2 failed"));
   t->assertEqual(filename, F("bar"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("foo/bar"));
+  t->assert(helper.getFilenameFromFullName(sdStorage, F("foo/bar"), filename, 64), 
+        F("getFilenameFromFullName call 3 failed"));
   t->assertEqual(filename, F("bar"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("/foo/bar"));
+  t->assert(helper.getFilenameFromFullName(sdStorage, F("/foo/bar"), filename, 64), 
+        F("getFilenameFromFullName call 4 failed"));
   t->assertEqual(filename, F("bar"));
-  if (filename) delete[] filename;
-  filename = nullptr;
-  filename = helper.getFilenameFromFullName(sdStorage, F("/foo/bar/baz.txt"));
+  t->assert(helper.getFilenameFromFullName(sdStorage, F("/foo/bar/baz.txt"), filename, 64), 
+        F("getFilenameFromFullName call 5 failed"));
   t->assertEqual(filename, F("baz.txt"));
-  if (filename) delete[] filename;
-  filename = nullptr;
 }
 
 void testCreateTransaction_happyPath(TestInvocation* t) {
@@ -272,8 +253,8 @@ void testAbortTransaction_abortFails(TestInvocation* t) {
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true; // all tmp files exist
   ts.onRemoveReturn = false; // can't remove tmp file
-
   t->assert(!sdStorage->abortTxn(txn, &ts), F("abortTxn should have failed"));
+
 }
 
 void testCommitTransaction_happyPath(TestInvocation* t) {
@@ -281,15 +262,15 @@ void testCommitTransaction_happyPath(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // newFile.dat does not exist (new file)
   ts.onExistsReturn[1] = true; // /TESTROOT exists
-  ts.onExistsReturn[2] = false; // newFile's tmp file does not exist yet
-  ts.onExistsReturn[3] = true; // newFile's tmp file does exist now
-  ts.onExistsReturn[4] = true; // newFile.dat exists (to remove before replace)
   ts.onIsDirectoryReturn = true; // /TESTROOT is a directory
+  ts.onExistsReturn[2] = false; // newFile's tmp file does not exist yet
 
   Transaction* txn = sdStorage->beginTxn(&ts, "newFile.dat");
   StreamableDTO newDto;
   t->assert(txn, F("beginTxn failed"));
 
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // all tmp files exist
   ts.onRenameReturn = true; // .txn file renamed to .cmt, tmpFile renamed to newFile.dat
   ts.onRemoveReturn = true; // .cmt file removed
   t->assert(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
@@ -346,12 +327,84 @@ void testSaveFile_noTxn(TestInvocation* t) {
 
 void testIdxFilename(TestInvocation* t) {
   t->setName(F("Index filename"));
-  char* idxFilename = helper.getIndexFilename(sdStorage, F("foo"));
+  char idxFilename[64];
+  t->assert(helper.getIndexFilename(sdStorage, Index(F("foo")), idxFilename, 64), 
+        F("getIndexFilename returned false"));
   t->assertEqual(idxFilename, F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
-  delete[] idxFilename;
 }
 
+void testToIndexLine(TestInvocation* t) {
+  t->setName(F("Convert IndexEntry to chars"));
+  char line[64];
+  IndexEntry e0(F("key"), F("value"));
+  t->assert(helper.toIndexLine(&e0, line, 64), F("toIndexLine 1 failed"));
+  t->assertEqual(line, F("key=value"));
+  IndexEntry e1(F("key"));
+  t->assert(helper.toIndexLine(&e1, line, 64), F("toIndexLine 2 failed"));
+  t->assertEqual(line, F("key="));
+  IndexEntry e2(F(""));
+  t->assert(!helper.toIndexLine(&e2, line, 64), F("Should have failed"));
+}
 
+void testIdxUpsert_firstEntryNoTxn(TestInvocation *t) {
+  t->setName(F("Index upsert - firstEntryImplicitTxn"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
+  ts.onRenameReturn = true; // commit txn
+  ts.onRemoveReturn = true; // transaction cleanup
+
+  IndexEntry entry(F("fan"), F("1"));
+  t->assert(sdStorage->idxUpsert(&ts, Index(F("myIndex")), &entry), F("First entry insert failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("fan=1\n"), F("Unexpected first index entry written"));
+  t->assert(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
+}
+
+// void testIdxUpsert(TestInvocation *t) {
+//   t->setName(F("Index upsert"));
+//   char* idxFilename = sdStorage.indexFilename(F("myIndex"));
+//   MockSdFat::TestState ts;
+//   ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+//   ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
+//   ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
+//   ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
+
+
+//   Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
+//   t->assert(txn, F("Create transaction failed"));
+//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("1"), txn), F("First entry insert failed"));
+//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("fan=1\n"), F("Unexpected first index entry written"));
+
+//   ts.onExistsAlways = true;
+//   ts.onExistsAlwaysReturn = true; // simplify remainder of test
+//   ts.writeIdxDataCaptor.reset();
+//   ts.onReadIdxData = String("fan=1\n");
+//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("ear"), String("6"), txn), F("Insert first line failed"));
+//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\n"), F("Inserted first line in wrong position"));
+
+//   ts.writeIdxDataCaptor.reset();
+//   ts.onReadIdxData = String("ear=6\nfan=1\n");
+//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("egg"), String("12"), txn), F("Insert between failed"));
+//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\negg=12\nfan=1\n"), F("Inserted between in wrong position"));
+
+//   ts.writeIdxDataCaptor.reset();
+//   ts.onReadIdxData = String("ear=6\nfan=1\n");
+//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("gum"), String("3"), txn), F("Insert after last failed"));
+//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\ngum=3\n"), F("Inserted after last in wrong position"));
+
+
+//   ts.writeIdxDataCaptor.reset();
+//   ts.onReadIdxData = String("ear=6\nfan=1\n");
+//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("3"), txn), F("Update index entry failed"));
+//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=3\n"), F("Unexpected index data after update entry"));
+
+//   ts.onRemoveReturn = true;
+//   t->assert(txn, F("txn is null"));
+//   t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
+//   delete[] idxFilename;
+// }
 
 void setup() {
   Serial.begin(9600);
@@ -379,7 +432,9 @@ void setup() {
     testCommitTransaction_failure,
     testLoadFile,
     testSaveFile_noTxn,
-    testIdxFilename
+    testIdxFilename,
+    testToIndexLine,
+    testIdxUpsert_firstEntryNoTxn
   };
 
   runTestSuiteShowMem(tests, before, nullptr);

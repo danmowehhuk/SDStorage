@@ -2,6 +2,7 @@
 #define _SDStorage_IndexManager_h
 
 
+#include "../Index.h"
 #include "FileHelper.h"
 #include "IndexScanFilters.h"
 #include "StorageProvider.h"
@@ -9,10 +10,9 @@
 #include "Transaction.h"
 #include "TransactionManager.h"
 
-// forward declared
-class SDStorage;
 
-static const char _SDSTORAGE_INDEX_EXTSN[]       PROGMEM = ".idx";
+using namespace sdstorage;
+using namespace SDStorageStrings;
 
 class IndexManager {
 
@@ -26,28 +26,13 @@ class IndexManager {
     IndexManager(const IndexManager&) = delete;
     IndexManager& operator=(const IndexManager&) = delete;
 
-
   private:
     FileHelper* _fileHelper;
     StorageProvider* _storageProvider;
     TransactionManager* _txnManager;
 
-    /*
-     * Returns the fully-qualified filename of the given index so it can
-     * be added to a Transaction via beginTxn(filenames...)
-     * These return dynamically allocated char[]'s that the caller must free
-     */
-    char* indexFilename(const char* idxName, bool isIdxNamePmem = false);
-    char* indexFilename(const __FlashStringHelper* idxName);
-    char* indexFilename_P(const char* idxName);
-
-
-    bool idxUpsert(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert_P(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(void* testState, const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert_P(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert(Index idx, IndexEntry* entry, Transaction* txn = nullptr);
+    bool idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn = nullptr);
 
     friend class IndexScanFilters;
     friend class SDStorage;

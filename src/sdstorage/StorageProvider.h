@@ -21,6 +21,8 @@ class StorageProvider {
     StorageProvider(const StorageProvider&) = delete;
     StorageProvider& operator=(const StorageProvider&) = delete;
 
+    const size_t getBufferSize() const { return _streams.getBufferSize(); };
+
   private:
     uint8_t _sdCsPin;         // SD card chip select pin
     StreamableManager _streams;
@@ -41,13 +43,13 @@ class StorageProvider {
     bool _exists(const char* filename, void* testState = nullptr);
     bool _mkdir(const char* filename, void* testState = nullptr);
     bool _loadFromStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
-    void _writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
-    void _writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool _writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool _writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
     bool _isDir(const char* filename, void* testState = nullptr);
     bool _remove(const char* filename, void* testState = nullptr);
     bool _rename(const char* oldFilename, const char* newFilename, void* testState = nullptr);
-    void _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
-    void _updateIndex(const char* indexFilename, const char* tmpFilename, 
+    bool _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
+    bool _updateIndex(const char* indexFilename, const char* tmpFilename, 
           StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
 
     friend class SDStorage;

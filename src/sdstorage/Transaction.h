@@ -4,6 +4,7 @@
 
 #include <StreamableDTO.h>
 #include "Strings.h"
+#include "FileHelper.h"
 
 
 static const char _SDSTORAGE_TXN_TMP_EXTSN[]    PROGMEM = ".tmp";
@@ -17,16 +18,25 @@ static const char _SDSTORAGE_TXN_COMMIT_EXTSN[] PROGMEM = ".cmt";
 class Transaction: public StreamableDTO {
 
   public:
+    Transaction() = delete;
     virtual ~Transaction() {
       releaseLocks();
       if (_baseFilename) delete[] _baseFilename;
       _baseFilename = nullptr;
     };
 
+    // Disable moving and copying
+    Transaction(Transaction&& other) = delete;
+    Transaction& operator=(Transaction&& other) = delete;
+    Transaction(const Transaction&) = delete;
+    Transaction& operator=(const Transaction&) = delete;
+
   private:
     bool _isCommitted = false;
     char* _baseFilename = nullptr;
-    Transaction(const char* workDir);
+    FileHelper* _fileHelper;
+
+    Transaction(FileHelper* fileHelper);
 
     // Sequence restarts from 0 with every reboot, so it's vital that
     // the SDStorage::fsck() process cleans up any lingering
@@ -42,12 +52,10 @@ class Transaction: public StreamableDTO {
     void setCommitted();
 
     // Filename of this transaction's file: <workDir>/<id>.<extension>
-    // Returns a dynamically allocated char[] must be released by the caller
-    char* getFilename();
+    bool getFilename(char* buffer, size_t bufferSize);
 
     // Temp filename where uncommitted changes will be written
     char* getTmpFilename(const char* filename, bool isPmem = false);
-    // char* getTmpFilename(const __FlashStringHelper* filename);
 
     // Lock (waiting if necessary) and add to transaction
     void add(const char* filename, const char* workDir);

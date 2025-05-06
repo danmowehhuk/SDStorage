@@ -13,6 +13,7 @@
 #define _SDStorage_h
 
 
+#include "Index.h"
 #include <StreamableDTO.h>
 #include <StreamableManager.h>
 #include "sdstorage/FileHelper.h"
@@ -74,37 +75,42 @@ class SDStorage {
      *
      * The following prepend the path with the root directory if necessary
      */
-    bool mkdir(const char* dirName, void* testState = nullptr);
+    bool mkdir(const char* dirName, bool isDirNamePmem = false, void* testState = nullptr);
     bool mkdir(const __FlashStringHelper* dirName, void* testState = nullptr);
+    bool mkdir_P(const char* dirName, void* testState = nullptr);
     bool load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr);
     bool load(const __FlashStringHelper* filename, StreamableDTO* dto, void* testState = nullptr);
     bool save(const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
     bool save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
     bool save(const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
     bool save(void* testState, const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
-    bool exists(const char* filename, void* testState = nullptr);
+    bool exists(const char* filename, bool isFilenamePmem = false, void* testState = nullptr);
     bool exists(const __FlashStringHelper* filename, void* testState = nullptr);
-    bool erase(const char* filename, Transaction* txn = nullptr);
+    bool exists_P(const char* filename, void* testState = nullptr);
+    bool erase(const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr);
     bool erase(const __FlashStringHelper* filename, Transaction* txn = nullptr);
-    bool erase(void* testState, const char* filename, Transaction* txn = nullptr);
+    bool erase_P(const char* filename, Transaction* txn = nullptr);
+    bool erase(void* testState, const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr);
     bool erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr);
+    bool erase_P(void* testState, const char* filename, Transaction* txn = nullptr);
 
     /*
      * INDEX OPERATIONS
      * 
      */
-    bool idxUpsert(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert_P(const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert(void* testState, const __FlashStringHelper* idxName, const char* key, const char* value, Transaction* txn = nullptr);
-    bool idxUpsert_P(void* testState, const char* idxName, const char* key, const char* value, Transaction* txn = nullptr);
+    bool idxUpsert(Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
+      return _idxManager->idxUpsert(idx, entry, txn);
+    };
+    bool idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
+      return _idxManager->idxUpsert(testState, idx, entry, txn);
+    };
 
     /*
      * TRANSACTION OPERATIONS
      *
      * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
-     * or a mixture of both. The root directory will be prepended if necessary.
+     * or a mixture of both. Indexes may also be provided. All will be converted to absolute canonical
+     * filenames, the root directory prepended if necessary.
      */
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames) {
@@ -115,12 +121,20 @@ class SDStorage {
       return _txnManager->beginTxn(filename, moreFilenames...);
     };
     template <typename... Args>
+    Transaction* beginTxn(Index idx, Args... moreFilenames) {
+      return _txnManager->beginTxn(idx, moreFilenames...);
+    };
+    template <typename... Args>
     Transaction* beginTxn(void* testState, const char* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
     };
     template <typename... Args>
     Transaction* beginTxn(void* testState, const __FlashStringHelper* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
+    };
+    template <typename... Args>
+    Transaction* beginTxn(void* testState, Index idx, Args... moreFilenames) {
+      return _txnManager->beginTxn(testState, idx, moreFilenames...);
     };
 
     /*

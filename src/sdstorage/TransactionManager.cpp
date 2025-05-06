@@ -1,19 +1,17 @@
 #include "TransactionManager.h"
 
 bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) {
-  char* oldName = txn->getFilename();
-  txn->setCommitted();
-  char* newName = txn->getFilename();
   bool commitSuccess = false;
-
   do {
+    char oldName[FileHelper::MAX_FILENAME_LENGTH];
+    if (!txn->getFilename(oldName, FileHelper::MAX_FILENAME_LENGTH)) break;
+    txn->setCommitted();
+    char newName[FileHelper::MAX_FILENAME_LENGTH];
+    if (!txn->getFilename(newName, FileHelper::MAX_FILENAME_LENGTH)) break;
     if (!_storageProvider->_rename(oldName, newName, testState)) break;
     if (!applyChanges(txn, testState)) break;
     commitSuccess = true;
   } while (false);
-
-  delete[] oldName;
-  delete[] newName;
 
   if (!commitSuccess) {
     /*
@@ -68,46 +66,53 @@ bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
  * Locks a file to the transaction, creating a temp file for writing
  */
 bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const char* filename, bool isPmem = false) {
-  char* resolvedFilename = _fileHelper->canonicalFilename(filename, isPmem);
-  boolean result = true;
+  FileHelper::Filename fname(filename, isPmem);
+  char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
+  if (!_fileHelper->canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) {
+#if defined(DEBUG)
+        Serial.print(F("canonicalFilename failed for "));
+        Serial.println(fname.name);
+#endif
+    return false;
+  }
+  boolean result = false;
   if (!_storageProvider->_exists(resolvedFilename, testState)) {
     do {
       // Validate new file to be created
-      char* shortFilename = FileHelper::getFilenameFromFullName(resolvedFilename);
-      bool validFAT16Filename = FileHelper::isValidFAT16Filename(shortFilename);
-      if (!validFAT16Filename) {
+      char shortFilename[FileHelper::MAX_FILENAME_LENGTH];
+      if (!FileHelper::getFilenameFromFullName(resolvedFilename, shortFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+      if (!FileHelper::isValidFAT16Filename(shortFilename)) {
 #if defined(DEBUG)
         Serial.print(F("Invalid FAT16 filename: "));
         Serial.println(shortFilename);
 #endif
-        result = false;
+        break;
       }
-      delete[] shortFilename;
-      if (!result) break;
 
-      char* path = FileHelper::getPathFromFilename(resolvedFilename);
-      bool pathExists = _storageProvider->_exists(path, testState);
-      bool pathIsDir = _storageProvider->_isDir(path, testState);
-      if (!pathExists) {
+      char path[FileHelper::MAX_FILENAME_LENGTH];
+      if (!FileHelper::getPathFromFilename(resolvedFilename, path, FileHelper::MAX_FILENAME_LENGTH)) break;
+      if (!_storageProvider->_exists(path, testState)) {
 #if defined(DEBUG)
         Serial.print(F("Directory does not exist: "));
         Serial.println(path);
 #endif
-        result = false;
+        break;
       }
-
-      if (!pathIsDir) {
+      if (!_storageProvider->_isDir(path, testState)) {
 #if defined(DEBUG)
         Serial.print(F("Not a directory: "));
         Serial.println(path);
 #endif
-        result = false;
+        break;
       }
-      delete[] path;
+      result = true;
     } while (false);
+  } else {
+    result = true;
   }
 
   if (result) {
+
     txn->add(resolvedFilename, _fileHelper->getWorkDir());
     char* tmpFilename = txn->getTmpFilename(resolvedFilename);
     if (tmpFilename && _storageProvider->_exists(tmpFilename, testState)) {
@@ -118,7 +123,6 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
       result = false;
     }
   }
-  delete[] resolvedFilename;
   return result;
 }
 
@@ -148,10 +152,6 @@ char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename,
   return tmpFilename;
 }
 
-// char* TransactionManager::getTmpFilename(Transaction* txn, const __FlashStringHelper* filename) {
-//   return getTmpFilename(txn, reinterpret_cast<const char*>(filename), true);
-// }
-
 bool TransactionManager::finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState) {
   if (autoCommit) {
     if (success) {
@@ -168,14 +168,18 @@ bool TransactionManager::finalizeTxn(Transaction* txn, bool autoCommit, bool suc
 }
 
 void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr) {
-  char* txnFilename = txn->getFilename();
+  char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
+  if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) {
+#if defined(DEBUG)
+    Serial.println(F("cleanupTxn failed"));
+#endif
+  }
   if (!_storageProvider->_remove(txnFilename, testState)) {
 #if defined(DEBUG)
     Serial.print(F("Could not remove "));
     Serial.println(txnFilename);
 #endif
   }
-  delete[] txnFilename;
   delete txn;
 }
 
@@ -183,6 +187,7 @@ bool TransactionManager::applyChanges(Transaction* txn, void* testState = nullpt
 
   auto applyChangesFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valuePmem, void* capture) -> bool {
     TransactionCapture* c = static_cast<TransactionCapture*>(capture);
+
     if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
       // tombstone - delete the file
       c->storageProvider->_remove(filename, c->ts);

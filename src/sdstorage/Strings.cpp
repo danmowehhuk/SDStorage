@@ -62,4 +62,12 @@ namespace SDStorageStrings {
     return (!str || str[0] == '\0');
   };
 
+  bool isEmpty(const __FlashStringHelper* str) {
+    return isEmpty_P(reinterpret_cast<const char*>(str));
+  };
+
+  bool isEmpty_P(const char* str) {
+    return (!str || strlen_P(str) == 0);
+  };
+
 }

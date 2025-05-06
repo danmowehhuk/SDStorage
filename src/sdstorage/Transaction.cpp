@@ -6,10 +6,13 @@ static StreamableDTO* Transaction::_locks = new StreamableDTO();
 
 using namespace SDStorageStrings;
 
-Transaction::Transaction(const char* workDir) : StreamableDTO() {
+Transaction::Transaction(FileHelper* fileHelper):
+      StreamableDTO(), _fileHelper(fileHelper) {
   char idBuffer[12];
   static const char fmt[] PROGMEM = "%u";
   snprintf_P(idBuffer, sizeof(idBuffer), fmt, _idSeq++);
+
+  char* workDir = fileHelper->getWorkDir();
   size_t workDirLen = strlen(workDir);
   size_t idLen = strlen(idBuffer);
   _baseFilename = new char[workDirLen + idLen + 2](); // +1 for '/' +1 for '\0'
@@ -55,15 +58,21 @@ void Transaction::releaseLocks() {
   processEntries(unlockFunction, nullptr);
 }
 
-char* Transaction::getFilename() {
+bool Transaction::getFilename(char* buffer, size_t bufferSize) {
+  if (!buffer || bufferSize == 0 || !FileHelper::verifyBufferSize(bufferSize)) return false;
+
   const char* extPmem = _isCommitted ? _SDSTORAGE_TXN_COMMIT_EXTSN : _SDSTORAGE_TXN_TX_EXTSN;
   const char* extRAM = strdup_P(extPmem);
-  size_t totalLen = strlen(_baseFilename) + strlen(extRAM) + 1;
-  char* out = new char[totalLen]();
   static const char fmt[] PROGMEM = "%s%s";
-  snprintf_P(out, totalLen, fmt, _baseFilename, extRAM);
+  int n = snprintf_P(buffer, bufferSize, fmt, _baseFilename, extRAM);
+  bool success = true;
+  if (n < 0 || static_cast<size_t>(n) >= bufferSize) {
+    // Truncated or error
+    buffer[bufferSize - 1] = '\0';
+    success = false;
+  }
   free(extRAM);
-  return out;
+  return success;
 }
 
 void Transaction::setCommitted() {
@@ -73,7 +82,3 @@ void Transaction::setCommitted() {
 char* Transaction::getTmpFilename(const char* filename, bool isPmem = false) {
   return get(filename, isPmem);
 };
-
-// char* Transaction::getTmpFilename(const __FlashStringHelper* filename) {
-//   return getTmpFilename(reinterpret_cast<const char*>(filename), true);
-// };

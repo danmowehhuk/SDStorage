@@ -35,12 +35,16 @@ bool SDStorage::begin(void* testState) {
  * on the filename if necessary)
  */
 bool SDStorage::load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr) {
-  char* resolvedFilename = _fileHelper.canonicalFilename(filename, isFilenamePmem);
+  FileHelper::Filename fname(filename, isFilenamePmem);
+  char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   bool result = false;
-  if (_storageProvider._exists(resolvedFilename, testState)) {
-    result = _storageProvider._loadFromStream(resolvedFilename, dto, testState);
-  }
-  if (resolvedFilename != filename) delete[] resolvedFilename;
+  do {
+    if (!_fileHelper.canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+    if (_storageProvider._exists(resolvedFilename, testState)) {
+      if (!_storageProvider._loadFromStream(resolvedFilename, dto, testState)) break;
+    }
+    result = true;
+  } while (false);
   return result;
 }
 
@@ -58,28 +62,26 @@ bool SDStorage::save(const char* filename, StreamableDTO* dto, Transaction* txn 
 }
 
 bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false) {
-  char* resolvedFilename = _fileHelper.canonicalFilename(filename, isFilenamePmem);
+  FileHelper::Filename fname(filename, isFilenamePmem);
+  char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
+  bool result = false;
   bool implicitTx = false;
-  if (txn == nullptr) {
-    // make an implicit, single-file transaction
-    txn = beginTxn(testState, resolvedFilename);
-    if (!txn) {
-      if (resolvedFilename) delete[] resolvedFilename;
-      return false;
+  do {
+    if (!_fileHelper.canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+    if (txn == nullptr) {
+      // make an implicit, single-file transaction
+      txn = beginTxn(testState, resolvedFilename);
+      if (!txn) break;
+      implicitTx = true;
     }
-    implicitTx = true;
+    char* tmpFilename = _txnManager->getTmpFilename(txn, resolvedFilename);  
+    if (!tmpFilename || strlen(tmpFilename) == 0) break;
+    if (!_storageProvider._writeToStream(tmpFilename, dto, testState)) break;
+    result = true;
+  } while (false);
+  if (result && implicitTx) {
+    result = commitTxn(txn, testState);
   }
-  char* tmpFilename = _txnManager->getTmpFilename(txn, resolvedFilename);  
-  bool result = true;
-  if (tmpFilename && strlen(tmpFilename) > 0) {
-    _storageProvider._writeToStream(tmpFilename, dto, testState);
-    if (implicitTx) {
-      result = commitTxn(txn, testState);
-    }
-  } else {
-    result = false;    
-  }
-  if (resolvedFilename) delete[] resolvedFilename;
   return result;
 }
 
@@ -95,79 +97,91 @@ bool SDStorage::save(void* testState, const __FlashStringHelper* filename, Strea
  * Returns true if the file exists (after prepending the root dir on the 
  * filename if necessary)
  */
-bool SDStorage::exists(const char* filename, void* testState = nullptr) {
-  char* resolvedName = _fileHelper.canonicalFilename(filename);
-  bool result = _storageProvider._exists(resolvedName, testState);
-  delete[] resolvedName;
+bool SDStorage::exists(const char* filename, bool isFilenamePmem = false, void* testState = nullptr) {
+  FileHelper::Filename fname(filename, isFilenamePmem);
+  char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
+  bool result = false;
+  do {
+    if (!_fileHelper.canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+    if (!_storageProvider._exists(resolvedFilename, testState)) break;
+    result = true;
+  } while (false);
   return result;
 }
+
 bool SDStorage::exists(const __FlashStringHelper* filename, void* testState = nullptr) {
-  char* filenameRAM = strdup(filename);
-  bool result = exists(filenameRAM, testState);
-  free(filenameRAM);
-  return result;
+  return exists(reinterpret_cast<const char*>(filename), true, testState);
+}
+
+bool SDStorage::exists_P(const char* filename, void* testState = nullptr) {
+  return exists(filename, true, testState);
 }
 
 /*
  * Deletes a file (after prepending the root dir on the filename if necessary).
  * If no transaction is provided, the write is auto-committed.
  */
-bool SDStorage::erase(const char* filename, Transaction* txn = nullptr) {
+bool SDStorage::erase(const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr) {
   if (!filename) return false;
-  return erase(nullptr, filename, txn);
+  return erase(nullptr, filename, isFilenamePmem, txn);
 }
 
 bool SDStorage::erase(const __FlashStringHelper* filename, Transaction* txn = nullptr) {
   if (!filename) return false;
-  char* filenameRAM = strdup(filename);
-  bool result = erase(filenameRAM, txn);
-  free(filenameRAM);
-  return result;
+  return erase(nullptr, filename, txn);
 }
 
-bool SDStorage::erase(void* testState, const char* filename, Transaction* txn = nullptr) {
+bool SDStorage::erase_P(const char* filename, Transaction* txn = nullptr) {
   if (!filename) return false;
+  return erase(nullptr, filename, true, txn);
+}
+
+bool SDStorage::erase(void* testState, const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr) {
+  FileHelper::Filename fname(filename, isFilenamePmem);
+  char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   bool result = false;
-  char* resolvedFilename = _fileHelper.canonicalFilename(filename);
-  if (resolvedFilename && _storageProvider._exists(resolvedFilename, testState)) {
+  do {
+    if (!_fileHelper.canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+    if (!_storageProvider._exists(resolvedFilename, testState)) break;
+
     if (txn) {
       char* tmpFilename = _txnManager->getTmpFilename(txn, resolvedFilename);
-      if (tmpFilename && strlen(tmpFilename) > 0) {
-        txn->put(resolvedFilename, _SDSTORAGE_TOMBSTONE, false, true); // tombstone the filename
-        char* txnFilename = txn->getFilename();
-       _storageProvider._writeTxnToStream(txnFilename, txn, testState);
-        delete[] txnFilename;
-        result = true;
-      }
-    } else {
-      result = _storageProvider._remove(resolvedFilename, testState);
-    }
-  }
-  if (resolvedFilename) delete[] resolvedFilename;
+      if (!tmpFilename || strlen(tmpFilename) == 0) break;
+      txn->put(resolvedFilename, _SDSTORAGE_TOMBSTONE, false, true); // tombstone the filename
+      char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
+      if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
+      if (!_storageProvider._writeTxnToStream(txnFilename, txn, testState)) break;
+      result = true;
+
+    } else if (!_storageProvider._remove(resolvedFilename, testState)) break;
+    result = true;
+
+  } while (false);
   return result;
 }
 
 bool SDStorage::erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr) {
-  if (!filename) return false;
-  char* filenameRAM = strdup(filename);
-  bool result = erase(testState, filenameRAM, txn);
-  free(filenameRAM);
-  return result;
+  return erase(testState, reinterpret_cast<const char*>(filename), true, txn);
 }
 
+bool SDStorage::erase_P(void* testState, const char* filename, Transaction* txn = nullptr) {
+  return erase(testState, filename, true, txn);
+}
 /*
  * Creates a new directory (after prepending the root dir on the 
  * dirName if necessary). Returns true if successful.
  */
-bool SDStorage::mkdir(const char* dirName, void* testState = nullptr) {
-  char* resolvedName = _fileHelper.canonicalFilename(dirName);
-  bool result = _storageProvider._mkdir(resolvedName, testState);
-  delete[] resolvedName;
-  return result;
+bool SDStorage::mkdir(const char* dirName, bool isDirNamePmem = false, void* testState = nullptr) {
+  FileHelper::Filename dname(dirName, isDirNamePmem);
+  char resolvedName[FileHelper::MAX_FILENAME_LENGTH];
+  if (!_fileHelper.canonicalFilename(dname, resolvedName, FileHelper::MAX_FILENAME_LENGTH)) return false;
+  return _storageProvider._mkdir(resolvedName, testState);
 }
+
 bool SDStorage::mkdir(const __FlashStringHelper* dirName, void* testState = nullptr) {
-  char* dirNameRAM = strdup(dirName);
-  bool result = mkdir(dirNameRAM, testState);
-  free(dirNameRAM);
-  return result;
+  return mkdir(reinterpret_cast<const char*>(dirName), true, testState);
+}
+
+bool SDStorage::mkdir_P(const char* dirName, void* testState = nullptr) {
+  return mkdir(dirName, true, testState);
 }

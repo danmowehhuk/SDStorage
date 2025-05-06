@@ -44,6 +44,7 @@ class MockSdFat {
         if (mkdirCaptor) free(mkdirCaptor);
         if (onLoadData) free(onLoadData);
         if (loadFilenameCaptor) free(loadFilenameCaptor);
+        if (onReadIdxData) free(onReadIdxData);
         if (writeTxnFilenameCaptor) free(writeTxnFilenameCaptor);
         if (removeCaptor) free(removeCaptor);
         if (renameOldCaptor) free(renameOldCaptor);
@@ -51,6 +52,9 @@ class MockSdFat {
         if (readIdxFilenameCaptor) free(readIdxFilenameCaptor);
         if (writeIdxFilenameCaptor) free(writeIdxFilenameCaptor);
         mkdirCaptor = nullptr;
+        onLoadData = nullptr;
+        onReadIdxData = nullptr;
+        loadFilenameCaptor = nullptr;
         writeTxnFilenameCaptor = nullptr;
         removeCaptor = nullptr;
         renameOldCaptor = nullptr;
@@ -127,9 +131,8 @@ class MockSdFat {
 
     Stream* readIndexFileStream(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      if (ts->writeIdxFilenameCaptor) free(ts->writeTxnFilenameCaptor);
-      ts->writeTxnFilenameCaptor = nullptr;
-      ts->writeIdxFilenameCaptor = strdup(filename);
+      if (ts->readIdxFilenameCaptor) free(ts->readIdxFilenameCaptor);
+      ts->readIdxFilenameCaptor = nullptr;
       ts->readIdxFilenameCaptor = filename;
       StringStream* ss = new StringStream(ts->onReadIdxData);
       return ss;
@@ -137,8 +140,8 @@ class MockSdFat {
 
     Stream* writeIndexFileStream(const char* filename, void* testState) {
       TestState* ts = static_cast<TestState*>(testState);
-      if (ts->writeIdxFilenameCaptor) free(ts->writeTxnFilenameCaptor);
-      ts->writeTxnFilenameCaptor = nullptr;
+      if (ts->writeIdxFilenameCaptor) free(ts->writeIdxFilenameCaptor);
+      ts->writeIdxFilenameCaptor = nullptr;
       ts->writeIdxFilenameCaptor = strdup(filename);
       return &(ts->writeIdxDataCaptor);
     };

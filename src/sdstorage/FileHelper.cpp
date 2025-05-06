@@ -4,6 +4,8 @@
 
 using namespace SDStorageStrings;
 
+const size_t FileHelper::MAX_FILENAME_LENGTH = 64;
+
 FileHelper::FileHelper(const char* rootDir, bool isRootDirPmem) {
   _rootDir = isRootDirPmem ? strdup_P(rootDir) : strdup(rootDir);
   trim(_rootDir);
@@ -11,22 +13,31 @@ FileHelper::FileHelper(const char* rootDir, bool isRootDirPmem) {
   // Make sure rootDir starts with "/"
   if (_rootDir[0] != '/') {
     size_t rootLen = strlen(_rootDir);
-    char* newRoot = new char[rootLen + 2];
+    char* newRoot = (char*)malloc(rootLen + 2); // uses free like strdup_P
     newRoot[0] = '/';
     strcpy(newRoot + 1, _rootDir);
-    delete[] _rootDir;
+    free(_rootDir);
     _rootDir = nullptr;
     newRoot[rootLen + 1] = '\0';
     _rootDir = newRoot;
   }
-  _idxDir = canonicalFilename(_SDSTORAGE_IDX_DIR, true);
-  _workDir = canonicalFilename(_SDSTORAGE_WORK_DIR, true);
+  char buffer[MAX_FILENAME_LENGTH];
+  bool result = true;
+  result &= canonicalFilename(Filename::fromProgmem(_SDSTORAGE_IDX_DIR), buffer, MAX_FILENAME_LENGTH);
+  if (result) _idxDir = strdup(buffer);
+  result &= canonicalFilename(Filename::fromProgmem(_SDSTORAGE_WORK_DIR), buffer, MAX_FILENAME_LENGTH);
+  if (result) _workDir = strdup(buffer);
+#if (defined(DEBUG))
+  if (!result) {
+    Serial.println(F("FileHelper initialization failed"));
+  }
+#endif
 };
 
 FileHelper::~FileHelper() {
-  if (_rootDir) delete[] _rootDir;
-  if (_workDir) delete[] _workDir;
-  if (_idxDir) delete[] _idxDir;
+  if (_rootDir) free(_rootDir);
+  if (_workDir) free(_workDir);
+  if (_idxDir) free(_idxDir);
   _rootDir = nullptr;
   _workDir = nullptr;
   _idxDir = nullptr;
@@ -39,36 +50,42 @@ FileHelper::~FileHelper() {
  *    "/foo.txt"            -->  "/<rootdir>/foo.txt"
  *    "/<rootdir>/foo.txt"  -->   "/<rootdir>/foo.txt"
  */
-char* FileHelper::canonicalFilename(const char* filename, bool isFilenamePmem = false) {
-  const char* filenameRAM = isFilenamePmem ? strdup_P(filename) : filename;
+bool FileHelper::canonicalFilename(Filename filename, char* buffer, size_t bufferSize) {
+  if (!filename.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
+
+  const char* filenameRAM = filename.isPmem ? strdup_P(filename.name) : strdup(filename.name);
   size_t rootLen = strlen(_rootDir);
   size_t filenameLen = strlen(filenameRAM);
-  char* resolvedName = nullptr;
+  int n = 0;
   if (strncmp(filenameRAM, _rootDir, rootLen) == 0 && filenameRAM[rootLen] == '/') {
     // Already prefixed — just return a copy
-    resolvedName = strdup(filenameRAM);
+    static const char fmt[] PROGMEM = "%s";
+    n = snprintf_P(buffer, bufferSize, fmt, filenameRAM);
   } else {
     // Otherwise construct new filename
-    size_t totalLen = rootLen + filenameLen + (filenameRAM[0] == '/' ? 1 : 2);
-    resolvedName = new char[totalLen]();
     if (filenameRAM[0] == '/') {
       static const char fmt[] PROGMEM = "%s%s";
-      snprintf_P(resolvedName, totalLen, fmt, _rootDir, filenameRAM);
+      snprintf_P(buffer, bufferSize, fmt, _rootDir, filenameRAM);
     } else {
       static const char fmt[] PROGMEM = "%s/%s";
-      snprintf_P(resolvedName, totalLen, fmt, _rootDir, filenameRAM);
+      snprintf_P(buffer, bufferSize, fmt, _rootDir, filenameRAM);
     }
   }
-  if (isFilenamePmem) delete[] filenameRAM;
-  return resolvedName;
-}
-
-char* FileHelper::canonicalFilename(const __FlashStringHelper* filename) {
-  return canonicalFilename(reinterpret_cast<const char*>(filename), true);
+  bool success = true;
+  if (n < 0 || static_cast<size_t>(n) >= bufferSize) {
+    // Truncated or error
+    buffer[bufferSize - 1] = '\0';
+    success = false;
+  }
+  free(filenameRAM);
+  return success;
 }
 
 bool FileHelper::isValidFAT16Filename(const char* filename) {
-  if (!filename || strlen(filename) == 0) return false;
+  if (!filename) return false;
+  if (strlen(filename) == 0) {
+    return false;
+  }
 
   // Check for more than one dot or invalid length
   const char* dot = strchr(filename, '.');
@@ -86,6 +103,8 @@ bool FileHelper::isValidFAT16Filename(const char* filename) {
     if (nameLen == 0 || nameLen > 8) return false;
     if (extLen == 0 || extLen > 3) return false;
   }
+
+  bool result = true;
   // Check each character
   size_t len = strlen(filename);
   for (size_t i = 0; i < len; i++) {
@@ -97,67 +116,94 @@ bool FileHelper::isValidFAT16Filename(const char* filename) {
            c == '\'' || c == '(' || c == ')' || c == '-' || c == '@' ||
            c == '^' || c == '_' || c == '`' || c == '{' || c == '}' ||
            c == '~' || (c == '.' && i != 0 && i != len - 1)))) {
-      return false;
+      result = false;
+      break;
     }
+  }
+  return result;
+}
+
+bool FileHelper::getPathFromFilename(const char* filename, char* buffer, size_t bufferSize) {
+  if (!filename || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
+  // Check for null, empty or all whitespace
+  if (*filename == '\0' || strspn(filename, " \t\r\n") == strlen(filename)) {
+    return false;
+  }
+
+  bool result = false;
+  do {
+    const char* lastSlash = strrchr(filename, '/');
+    if (!lastSlash) break;
+    size_t pathLen = lastSlash - filename;
+    if (pathLen == 0) pathLen = 1; // Root case "/"
+    if (pathLen + 1 >= MAX_FILENAME_LENGTH) {
+#if (defined(DEBUG))
+      Serial.print(F("pathLen exceeds allowed maximum of "));
+      Serial.println(MAX_FILENAME_LENGTH);
+#endif
+      break;
+    }
+    strncpy(buffer, filename, pathLen);
+    buffer[pathLen] = '\0';
+
+    result = true;
+  } while (false);
+  return result;
+}
+
+bool FileHelper::getFilenameFromFullName(const char* filename, char* buffer, size_t bufferSize) {
+  if (!filename || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
+  // Check for null, empty or all whitespace
+  if (*filename == '\0' || strspn(filename, " \t\r\n") == strlen(filename)) {
+    return false;
+  }
+
+  bool result = false;
+  do {
+    const char* lastSlash = strrchr(filename, '/');
+    const char* baseName = (lastSlash != nullptr) ? (lastSlash + 1) : filename;
+    size_t baseNameLen = strlen(baseName);
+    if (baseNameLen + 1 >= MAX_FILENAME_LENGTH) {
+#if (defined(DEBUG))
+      Serial.print(F("pathLen exceeds allowed maximum of "));
+      Serial.println(MAX_FILENAME_LENGTH);
+#endif
+      break;
+    }
+    strncpy(buffer, baseName, baseNameLen);
+    buffer[baseNameLen] = '\0';
+
+    result = true;
+  } while (false);
+  return result;
+}
+
+bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t bufferSize) {
+  if (!idx.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
+
+  char* extRAM = strdup_P(_SDSTORAGE_INDEX_EXTSN);
+  char* idxNameRAM = idx.isPmem ? strdup_P(idx.name) : strdup(idx.name);
+  char* idxDir = getIdxDir();
+  static const char fmt[] PROGMEM = "%s/%s%s";
+  int n = snprintf_P(buffer, bufferSize, fmt, idxDir, idxNameRAM, extRAM);
+  bool success = true;
+  if (n < 0 || static_cast<size_t>(n) >= bufferSize) {
+    // Truncated or error
+    buffer[bufferSize - 1] = '\0';
+    success = false;
+  }
+  free(extRAM);
+  free(idxNameRAM);
+  return success;
+}
+
+bool FileHelper::verifyBufferSize(size_t bufferSize) {
+  if (bufferSize > MAX_FILENAME_LENGTH) {
+#if (defined(DEBUG))
+    Serial.print(F("bufferSize exceeds allowed maximum of "));
+    Serial.println(MAX_FILENAME_LENGTH);
+#endif
+    return false;
   }
   return true;
 }
-
-bool FileHelper::isValidFAT16Filename(const __FlashStringHelper* filename) {
-  if (!filename) return false;
-
-  char* filenameRAM = strdup(filename);
-  bool result = isValidFAT16Filename(filenameRAM);
-  free(filenameRAM);
-  return result;
-}
-
-char* FileHelper::getPathFromFilename(const char* filename) {
-  // Check for null, empty or all whitespace
-  if (!filename || *filename == '\0' 
-        || strspn(filename, " \t\r\n") == strlen(filename)) return nullptr;
-
-  const char* lastSlash = strrchr(filename, '/');
-  if (!lastSlash) return nullptr;
-
-  size_t pathLen = lastSlash - filename;
-  if (pathLen == 0) pathLen = 1; // Root case "/"
-  char* path = new char[pathLen + 1]();
-  strncpy(path, filename, pathLen);
-  path[pathLen] = '\0';
-  return path;
-}
-
-char* FileHelper::getPathFromFilename(const __FlashStringHelper* filename) {
-  if (!filename) return nullptr;
-
-  char* filenameRAM = strdup(filename);
-  char* path = getPathFromFilename(filenameRAM);
-  delete[] filenameRAM;
-  return path;
-}
-
-char* FileHelper::getFilenameFromFullName(const char* filename) {
-  // Check for null, empty or all whitespace
-  if (!filename || *filename == '\0' 
-        || strspn(filename, " \t\r\n") == strlen(filename)) return nullptr;
-
-  const char* lastSlash = strrchr(filename, '/');
-  const char* baseName = (lastSlash != nullptr) ? (lastSlash + 1) : filename;
-  size_t baseNameLen = strlen(baseName);
-  char* result = new char[baseNameLen + 1]();
-  strncpy(result, baseName, baseNameLen);
-  result[baseNameLen] = '\0';
-  return result;
-}
-
-char* FileHelper::getFilenameFromFullName(const __FlashStringHelper* filename) {
-  if (!filename) return nullptr;
-
-  char* filenameRAM = strdup(filename);
-  char* baseName = getFilenameFromFullName(filenameRAM);
-  delete[] filenameRAM;
-  return baseName;
-}
-
-
