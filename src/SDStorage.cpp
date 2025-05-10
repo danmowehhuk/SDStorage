@@ -62,6 +62,22 @@ bool SDStorage::save(const char* filename, StreamableDTO* dto, Transaction* txn 
 }
 
 bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false) {
+  // Reading a newer format into old code is safe since StreamableDTO stores unrecognized
+  // fields in a hashmap and can even pipe them, but any newer logic will be missing,
+  // which could corrupt data, so do not save newer format dtos.
+  if (dto->getTypeId() != -1 && (dto->getSerialVersion() < dto->getDeserializedVersion())) {
+#if (defined(DEBUG))
+    Serial.print("Cannot write v");
+    Serial.print(dto->getDeserializedVersion());
+    Serial.print(" object with v");
+    Serial.print(dto->getSerialVersion());
+    Serial.print(" custom DTO (typeId=");
+    Serial.print(dto->getTypeId());
+    Serial.println(")");
+#endif
+    return false;
+  }
+
   FileHelper::Filename fname(filename, isFilenamePmem);
   char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   bool result = false;
