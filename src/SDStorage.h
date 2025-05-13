@@ -104,6 +104,18 @@ class SDStorage {
     bool idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
       return _idxManager->idxUpsert(testState, idx, entry, txn);
     };
+    bool idxRemove(Index idx, const char* key, Transaction* txn = nullptr) {
+      return _idxManager->idxRemove(idx, key, txn);
+    };
+    bool idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr) {
+      return _idxManager->idxRemove(testState, idx, key, txn);
+    };
+    bool idxRename(Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
+      return _idxManager->idxRename(idx, oldKey, newKey, txn);
+    };
+    bool idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
+      return _idxManager->idxRename(testState, idx, oldKey, newKey, txn);
+    };
 
     /*
      * TRANSACTION OPERATIONS

@@ -31,40 +31,32 @@ class IndexHelpers {
     static IndexEntry parseIndexEntry(const char* line) {
       if (!line || !*line) return IndexEntry("");
 
-      // Copy and trim line
-      size_t len = strlen(line);
-      while (len && isspace(line[0])) { line++; len--; }
-      while (len && isspace(line[len - 1])) len--;
-      char* trimmed = new char[len + 1];
-      strncpy(trimmed, line, len);
-      trimmed[len] = '\0';
+      // Trim leading and trailing spaces in-place
+      char* start = line;
+      while (isspace(*start)) ++start;
 
-      // Split on '='
-      char* eq = strchr(trimmed, '=');
+      char* end = start + strlen(start) - 1;
+      while (end > start && isspace(*end)) *end-- = '\0';
+
+      char* eq = strchr(start, '=');
       if (!eq) {
-        IndexEntry entry(trimmed);
-        delete[] trimmed;
-        return entry;
+        return IndexEntry(start);  // strdup’d inside constructor
       }
 
       *eq = '\0';
-      char* key = trimmed;
-      char* val = eq + 1;
+      char* key = start;
+      char* value = eq + 1;
 
-      // Trim key
-      while (isspace(*key)) key++;
+      while (isspace(*key)) ++key;
       char* keyEnd = key + strlen(key) - 1;
       while (keyEnd > key && isspace(*keyEnd)) *keyEnd-- = '\0';
 
-      // Trim value
-      while (isspace(*val)) val++;
-      char* valEnd = val + strlen(val) - 1;
-      while (valEnd > val && isspace(*valEnd)) *valEnd-- = '\0';
+      while (isspace(*value)) ++value;
+      char* valEnd = value + strlen(value) - 1;
+      while (valEnd > value && isspace(*valEnd)) *valEnd-- = '\0';
 
-      IndexEntry entry = (*val ? IndexEntry(key, val) : IndexEntry(key));
-      delete[] trimmed;
-      return entry;
-    }
+      return *value ? IndexEntry(key, value) : IndexEntry(key);
+    };
 
     friend class IndexManager;
     friend class IndexScanFilters;

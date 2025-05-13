@@ -36,22 +36,33 @@ class IndexScanFilters {
           key(key), newKey(nullptr), valueIn(value), isUpsert(true) {};
       IdxScanCapture(const char* oldKey, const char* newKey, bool):
           key(oldKey), newKey(newKey), valueIn(nullptr), isUpsert(false) {};
+      ~IdxScanCapture() {
+        if (prevKey) free(prevKey);
+        if (value) free(value);
+        prevKey = nullptr;
+        value = nullptr;
+      }
     };
 
     static bool idxUpsertFilter(const char* line, StreamableManager::DestinationStream* dest, 
           void* statePtr) {
+
       IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
       if (state->didUpsert) {
         // Upsert already happened. Pipe the rest in fast mode.
         return _pipeFast(line, dest);
       }
 
-      IndexEntry currEntry = IndexHelpers::parseIndexEntry(line);
+      char* l = strdup(line);
+      IndexEntry currEntry = IndexHelpers::parseIndexEntry(l);
+      free(l);
+
       if (isEmpty(currEntry.key)) {
 #if (defined(DEBUG))
         Serial.println(F("idxUpsert aborting - possible index corruption"));
 #endif
-        return false;
+        state->didUpsert = false; // signal txn rollback
+        return false; // stop piping index lines
       }
 
       if (strcmp(state->key, currEntry.key) == 0) {
@@ -78,10 +89,31 @@ class IndexScanFilters {
       } else {
         // state-key comes after this key, so keep going
         dest->println(line);
-        state->prevKey = state->key;
+        if (state->prevKey) free(state->prevKey);
+        state->prevKey = nullptr;
+        state->prevKey = strdup(currEntry.key);
       }
       return true;
     };
+
+    static bool idxRemoveFilter(const char* line, StreamableManager::DestinationStream* dest, 
+          void* statePtr) {
+      IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
+      if (state->didRemove) {
+        // Remove already happened. Pipe the rest in fast mode.
+        return _pipeFast(line, dest);
+      }
+      char* l = strdup(line);
+      IndexEntry currEntry = IndexHelpers::parseIndexEntry(l);
+      free(l);
+      if (strcmp(state->key, currEntry.key) == 0) {
+        /* skip it */ 
+        state->didRemove = true;
+      } else { dest->println(line); }
+      return true;
+    }
+
+
 
     static bool _pipeFast(const char* line, StreamableManager::DestinationStream* dest) {
       dest->println(line);

@@ -127,8 +127,8 @@ bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
 bool StorageProvider::_updateIndex(
       const char* indexFilename, const char* tmpFilename, 
       StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
-  Stream* src;
-  Stream* dest;
+  Stream* src = nullptr;
+  Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.readIndexFileStream(indexFilename, testState);
   dest = _sd.writeIndexFileStream(tmpFilename, testState);
@@ -145,8 +145,8 @@ bool StorageProvider::_updateIndex(
 #endif
   _streams.pipe(src, dest, filter, statePtr);
 #if defined(__SDSTORAGE_TEST)
-  StringStream* sss = static_cast<StringStream*>(src);
-  delete sss;
+  StringStream* ss = static_cast<StringStream*>(src);
+  delete ss;
 #else
   srcFile.close();
   destFile.close();

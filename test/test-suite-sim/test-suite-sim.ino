@@ -235,9 +235,7 @@ void testAbortTransaction_happyPath(TestInvocation* t) {
   Transaction* txn = sdStorage->beginTxn(&ts, F("file1.dat"));
   t->assert(txn, F("beginTxn failed"));
 
-  ts.onExistsAlways = true;
   ts.onRemoveReturn = true;
-
   t->assert(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
@@ -346,6 +344,29 @@ void testToIndexLine(TestInvocation* t) {
   t->assert(!helper.toIndexLine(&e2, line, 64), F("Should have failed"));
 }
 
+void testParseIndexEntry(TestInvocation *t) {
+  t->setName(F("Convert line to IndexEntry"));
+  IndexEntry entry1 = helper.parseIndexEntry(F(""));
+  t->assertEqual(entry1.key, F(""));
+  t->assert(!entry1.value, F("Expected value to be nullptr"));
+
+  IndexEntry entry2 = helper.parseIndexEntry(F("myKey"));
+  t->assertEqual(entry2.key, F("myKey"), F("Expected key = 'myKey'"));
+  t->assert(!entry2.value, F("Expected value to be nullptr"));
+
+  IndexEntry entry3 = helper.parseIndexEntry(F("myKey=myValue"));
+  t->assertEqual(entry3.key, F("myKey"));
+  t->assertEqual(entry3.value, F("myValue"));
+
+  IndexEntry entry4 = helper.parseIndexEntry(F("  myKey  =   myValue  "));
+  t->assertEqual(entry4.key, F("myKey"), F("Expected trimmed key"));
+  t->assertEqual(entry4.value, F("myValue"), F("Expected trimmed value"));
+
+  IndexEntry entry5 = helper.parseIndexEntry(F("  = value  "));
+  t->assertEqual(entry5.key, F(""), F("Expected empty key"));
+  t->assertEqual(entry5.value, F("value"), F("Expected value = 'value'"));
+}
+
 void testIdxUpsert_firstEntryNoTxn(TestInvocation *t) {
   t->setName(F("Index upsert - firstEntryImplicitTxn"));
   MockSdFat::TestState ts;
@@ -362,49 +383,130 @@ void testIdxUpsert_firstEntryNoTxn(TestInvocation *t) {
   t->assert(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
 }
 
-// void testIdxUpsert(TestInvocation *t) {
-//   t->setName(F("Index upsert"));
-//   char* idxFilename = sdStorage.indexFilename(F("myIndex"));
-//   MockSdFat::TestState ts;
-//   ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
-//   ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
-//   ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
-//   ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
+void testIdxUpsert_firstEntryWithTxn(TestInvocation *t) {
+  t->setName(F("Index upsert - firstEntryWithTxn"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[3] = false; // myIndex.idx doesn't exist (write first line)
 
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
 
-//   Transaction* txn = sdStorage.beginTxn(&ts, idxFilename);
-//   t->assert(txn, F("Create transaction failed"));
-//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("1"), txn), F("First entry insert failed"));
-//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("fan=1\n"), F("Unexpected first index entry written"));
+  IndexEntry entry(F("fan"), F("1"));
+  t->assert(sdStorage->idxUpsert(&ts, myIdx, &entry, txn), F("First entry insert failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("fan=1\n"), F("Unexpected first index entry written"));
 
-//   ts.onExistsAlways = true;
-//   ts.onExistsAlwaysReturn = true; // simplify remainder of test
-//   ts.writeIdxDataCaptor.reset();
-//   ts.onReadIdxData = String("fan=1\n");
-//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("ear"), String("6"), txn), F("Insert first line failed"));
-//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\n"), F("Inserted first line in wrong position"));
+  ts.onExistsAlways = true; // simplify rest of the test
+  ts.onExistsAlwaysReturn = true; // all tmp files exist
+  ts.onRenameReturn = true; // commit txn
+  ts.onRemoveReturn = true; // transaction cleanup
 
-//   ts.writeIdxDataCaptor.reset();
-//   ts.onReadIdxData = String("ear=6\nfan=1\n");
-//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("egg"), String("12"), txn), F("Insert between failed"));
-//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\negg=12\nfan=1\n"), F("Inserted between in wrong position"));
+  t->assert(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+  t->assert(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
+}
 
-//   ts.writeIdxDataCaptor.reset();
-//   ts.onReadIdxData = String("ear=6\nfan=1\n");
-//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("gum"), String("3"), txn), F("Insert after last failed"));
-//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=1\ngum=3\n"), F("Inserted after last in wrong position"));
+void testIdxUpsert_firstLine(TestInvocation* t) {
+  t->setName(F("Index upsert - first line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
 
-//   ts.writeIdxDataCaptor.reset();
-//   ts.onReadIdxData = String("ear=6\nfan=1\n");
-//   t->assert(sdStorage.idxUpsert(&ts, String("myIndex"), String("fan"), String("3"), txn), F("Update index entry failed"));
-//   t->assertEqual(ts.writeIdxDataCaptor.getString().c_str(), F("ear=6\nfan=3\n"), F("Unexpected index data after update entry"));
+  ts.onReadIdxData = strdup(F("fan=1\n"));
+  IndexEntry entry1(F("ear"), F("6"));
+  t->assert(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert first line failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\n"), F("Inserted first line in wrong position"));
 
-//   ts.onRemoveReturn = true;
-//   t->assert(txn, F("txn is null"));
-//   t->assert(sdStorage.abortTxn(txn, &ts), F("abortTxn failed"));
-//   delete[] idxFilename;
-// }
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_betweenLines(TestInvocation* t) {
+  t->setName(F("Index upsert - between lines"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
+  IndexEntry entry1(F("egg"), F("12"));
+  t->assert(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert between lines failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("ear=6\negg=12\nfan=1\n"), F("Inserted between in wrong position"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_lastLine(TestInvocation* t) {
+  t->setName(F("Index upsert - last line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
+  IndexEntry entry1(F("gum"), F("3"));
+  t->assert(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert last line failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\ngum=3\n"), F("Inserted after last in wrong position"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_updateLine(TestInvocation* t) {
+  t->setName(F("Index upsert - update line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
+  IndexEntry entry1(F("fan"), F("3"));
+  t->assert(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Update index entry failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=3\n"), F("Unexpected index data after update entry"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxRemove(TestInvocation *t) {
+  t->setName(F("Index remove"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
+  t->assert(sdStorage->idxRemove(&ts, myIdx, "ear", txn), F("Remove key failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("egg=45\nfan=1\n"), F("Unexpected index data after remove key"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
 
 void setup() {
   Serial.begin(9600);
@@ -433,8 +535,15 @@ void setup() {
     testLoadFile,
     testSaveFile_noTxn,
     testIdxFilename,
+    testParseIndexEntry,
     testToIndexLine,
-    testIdxUpsert_firstEntryNoTxn
+    testIdxUpsert_firstEntryNoTxn,
+    testIdxUpsert_firstEntryWithTxn,
+    testIdxUpsert_firstLine,
+    testIdxUpsert_betweenLines,
+    testIdxUpsert_lastLine,
+    testIdxUpsert_updateLine,
+    testIdxRemove
   };
 
   runTestSuiteShowMem(tests, before, nullptr);

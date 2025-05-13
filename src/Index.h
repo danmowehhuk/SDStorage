@@ -39,6 +39,21 @@ namespace sdstorage {
         key(strdup(k)), value(strdup(v)) {};
     IndexEntry(const __FlashStringHelper* k, const __FlashStringHelper* v):
         key(strdup(k)), value(strdup(v)) {};
+
+    IndexEntry(const IndexEntry& other)
+      : key(other.key ? strdup(other.key) : nullptr),
+        value(other.value ? strdup(other.value) : nullptr) {}
+
+    IndexEntry& operator=(const IndexEntry& other) {
+      if (this != &other) {
+        if (key) free(key);
+        if (value) free(value);
+        key = other.key ? strdup(other.key) : nullptr;
+        value = other.value ? strdup(other.value) : nullptr;
+      }
+      return *this;
+    }
+
     ~IndexEntry() {
       if (key) free(key);
       if (value) free(value);

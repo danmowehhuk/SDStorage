@@ -133,7 +133,7 @@ class MockSdFat {
       TestState* ts = static_cast<TestState*>(testState);
       if (ts->readIdxFilenameCaptor) free(ts->readIdxFilenameCaptor);
       ts->readIdxFilenameCaptor = nullptr;
-      ts->readIdxFilenameCaptor = filename;
+      ts->readIdxFilenameCaptor = strdup(filename);
       StringStream* ss = new StringStream(ts->onReadIdxData);
       return ss;
     };

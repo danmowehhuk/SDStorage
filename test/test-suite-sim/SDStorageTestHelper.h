@@ -52,7 +52,8 @@ class SDStorageTestHelper {
       return IndexHelpers::toIndexLine(entry, buffer, bufferSize);
     };
     IndexEntry parseIndexEntry(const __FlashStringHelper* line) {
-      char* l = strdup(line);
+      char* l = strdup(line);  // this is a RAM copy of the flash string
+      if (!l) return IndexEntry("");
       IndexEntry result = IndexHelpers::parseIndexEntry(l);
       free(l);
       return result;
