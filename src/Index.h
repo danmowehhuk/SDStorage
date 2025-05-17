@@ -1,3 +1,14 @@
+/*
+
+  Index.h - Part of SDStorage
+
+  SD card storage manager for StreamableDTOs with index and transaction support
+
+  Copyright (c) 2025, Dan Mowehhuk (danmowehhuk@gmail.com)
+  All rights reserved.
+
+*/
+
 #ifndef _SDStorage_Index_h
 #define _SDStorage_Index_h
 
