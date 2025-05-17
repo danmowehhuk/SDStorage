@@ -25,7 +25,7 @@ Transaction::Transaction(FileHelper* fileHelper):
   *p = '\0'; // null-terminate
 }
 
-void Transaction::add(const char* filename, const char* workDir) {
+void Transaction::add(const char* filename) {
   bool didLog = false;
   while (_locks->exists(filename)) {
     // wait until the key is removed (lock released)
@@ -41,11 +41,11 @@ void Transaction::add(const char* filename, const char* workDir) {
   char idBuffer[12];
   static const char fmt[] PROGMEM = "%u";
   snprintf_P(idBuffer, sizeof(idBuffer), fmt, _idSeq++);
-  size_t bufferSize = strlen(workDir) + 1 + strlen(idBuffer) + 5;
+  size_t bufferSize = strlen(_fileHelper->getWorkDir()) + 1 + strlen(idBuffer) + 5;
   char tmpFilename[bufferSize];
   char* extRAM = strdup_P(_SDSTORAGE_TXN_TMP_EXTSN);
   static const char fmt1[] PROGMEM = "%s/%s%s";
-  snprintf_P(tmpFilename, bufferSize, fmt1, workDir, idBuffer, extRAM);
+  snprintf_P(tmpFilename, bufferSize, fmt1, _fileHelper->getWorkDir(), idBuffer, extRAM);
   free(extRAM);
   put(filename, tmpFilename);
 }

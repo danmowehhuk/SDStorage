@@ -113,7 +113,7 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
 
   if (result) {
 
-    txn->add(resolvedFilename, _fileHelper->getWorkDir());
+    txn->add(resolvedFilename);
     char* tmpFilename = txn->getTmpFilename(resolvedFilename);
     if (tmpFilename && _storageProvider->_exists(tmpFilename, testState)) {
   #if defined(DEBUG)

@@ -19,12 +19,12 @@ bool SDStorage::begin(void* testState) {
           && !_storageProvider._mkdir(_fileHelper.getIdxDir(), testState)) break;
     if (!_storageProvider._exists(_fileHelper.getWorkDir(), testState) 
           && !_storageProvider._mkdir(_fileHelper.getWorkDir(), testState)) break;
-//     if (!fsck()) {
-// #if defined(DEBUG)
-//       Serial.println(F("SDStorage repair failed"));
-// #endif
-//       break;
-//     }
+    if (!fsck()) {
+#if defined(DEBUG)
+      Serial.println(F("SDStorage repair failed"));
+#endif
+      break;
+    }
     sdInit = true;
   } while (false);
   return sdInit;
@@ -201,3 +201,82 @@ bool SDStorage::mkdir(const __FlashStringHelper* dirName, void* testState = null
 bool SDStorage::mkdir_P(const char* dirName, void* testState = nullptr) {
   return mkdir(dirName, true, testState);
 }
+
+
+/******
+ * 
+ * Cleans up the _workDir on initialization in case any transactions were
+ * left after a power interruption. Finalized transactions are completed, and
+ * all others are rolled back.
+ * 
+ ******/
+
+bool SDStorage::fsck() {
+#if (!defined(__SDSTORAGE_TEST))
+  SdFat* _sd = &(_storageProvider._sd);
+  StreamableManager* _streams = &(_storageProvider._streams);
+  File workDirFile = _sd->open(_fileHelper.getWorkDir());
+  if (!workDirFile) return false;
+  if (!workDirFile.isDirectory()) return false;
+  const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  while (true) {
+    File file = workDirFile.openNextFile();
+    if (!file) break; // no more files
+    char filename[_fileHelper.MAX_FILENAME_LENGTH];
+    file.getName(filename, sizeof(_fileHelper.MAX_FILENAME_LENGTH));
+    if (endsWith(filename, commitExtension)) {
+      // Leftover commit file needs to be applied
+      Transaction* txn = new Transaction(&_fileHelper);
+      _streams->load(&file, txn);
+      file.close();
+      bool commitErr = true;
+      do {
+        if (_txnManager->applyChanges(txn)) break;
+        _txnManager->cleanupTxn(txn);
+        commitErr = false;
+      } while (false);
+      if (commitErr) {
+        /*
+         * Something failed that should not have failed. This means the files might
+         * be in an inconsistent state. Call the supplied errFunction.
+         */
+#if defined(DEBUG)
+        Serial.print(F("ERROR: SDStorage::fsck() - Failed to apply commit "));
+        Serial.println(filename);
+        delay(250); // Allow message to print before potentially crashing
+#endif
+        if (_errFunction != nullptr) _errFunction();
+        return false;
+      }
+    }
+  }
+  free(commitExtension);
+
+  // All commits successfully applied, so delete all remaining files.
+  // This effectively aborts any incomplete transactions.
+  workDirFile.close();
+  workDirFile = _sd->open(_fileHelper.getWorkDir());
+  while (true) {
+    File file = workDirFile.openNextFile();
+    if (!file) break; // no more files
+    char filename[_fileHelper.MAX_FILENAME_LENGTH];
+    file.getName(filename, sizeof(_fileHelper.MAX_FILENAME_LENGTH));
+    if (!_sd->remove(filename)) {
+      /*
+       * Cleanup failed, but any outstanding commits were applied, so nothing
+       * is in an inconsistent state, although the workdir needs to be cleaned up
+       * to prevent tmp file name collisions.
+       */
+#if defined(DEBUG)
+      Serial.print(F("ERROR: SDStorage::fsck() - Failed to clean up work dir "));
+      Serial.println(_fileHelper.getWorkDir());
+      delay(250); // Allow message to print before potentially crashing
+#endif
+      if (_errFunction != nullptr) _errFunction();
+      return false;
+    }
+  }
+#endif
+  return true;
+}
+

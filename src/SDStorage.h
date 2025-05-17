@@ -183,6 +183,13 @@ class SDStorage {
     TransactionManager* _txnManager = nullptr;
     IndexManager* _idxManager = nullptr;
 
+    /*
+     * Cleans up the _workDir on initialization in case any transactions were
+     * left after a power interruption. Finalized transactions are completed, and
+     * all others are rolled back.
+     */
+    bool fsck();
+
 };
 
 

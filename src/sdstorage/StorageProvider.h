@@ -55,6 +55,7 @@ class StorageProvider {
           void* statePtr, void* testState = nullptr);
 
     friend class SDStorage;
+    friend class SDStorageTestHelper;
     friend class TransactionManager;
     friend class IndexManager;
 

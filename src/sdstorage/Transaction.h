@@ -58,7 +58,7 @@ class Transaction: public StreamableDTO {
     char* getTmpFilename(const char* filename, bool isPmem = false);
 
     // Lock (waiting if necessary) and add to transaction
-    void add(const char* filename, const char* workDir);
+    void add(const char* filename);
     void releaseLocks();
 
     friend class SDStorage;

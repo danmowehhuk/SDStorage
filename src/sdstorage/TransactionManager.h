@@ -95,17 +95,17 @@ using namespace SDStorageStrings;
 
 template <typename... Args>
 Transaction* TransactionManager::beginTxn(const char* filename, Args... moreFilenames) {
-  return beginTxn(nullptr, filename, moreFilenames...);
+  return beginTxn((void*)1, filename, moreFilenames...);
 }
 
 template <typename... Args>
 Transaction* TransactionManager::beginTxn(const __FlashStringHelper* filename, Args... moreFilenames) {
-  return beginTxn(nullptr, filename, moreFilenames...);
+  return beginTxn((void*)1, filename, moreFilenames...);
 }
 
 template <typename... Args>
 Transaction* TransactionManager::beginTxn(sdstorage::Index idx, Args... moreFilenames) {
-  return beginTxn(nullptr, idx, moreFilenames...);
+  return beginTxn((void*)1, idx, moreFilenames...);
 }
 
 template <typename... Args>
