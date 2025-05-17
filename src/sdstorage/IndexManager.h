@@ -51,10 +51,16 @@ class IndexManager {
     bool idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr);
     bool idxRename(Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr);
     bool idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr);
+    bool idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr);
+    bool idxHasKey(Index idx, const char* key, void* testState = nullptr);
+    bool idxPrefixSearch(Index idx, SearchResults* results, void* testState = nullptr);
 
     // Creates an implicit txn if the one passed in is nullptr
     IndexTransaction _makeIndexTransaction(void* testState, Index idx, Transaction* txn);
-
+    
+    // General purpose index scanner
+    bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState = nullptr);
+    
     friend class IndexScanFilters;
     friend class SDStorage;
     friend class SDStorageTestHelper;

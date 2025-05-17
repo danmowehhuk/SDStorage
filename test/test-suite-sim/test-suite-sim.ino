@@ -508,6 +508,177 @@ void testIdxRemove(TestInvocation *t) {
   sdStorage->abortTxn(txn, &ts);
 }
 
+void testIdxRenameKey_happyPath(TestInvocation *t) {
+  t->setName(F("Rename index key - happy path"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
+  t->assert(sdStorage->idxRename(&ts, myIdx, "egg", "bag", txn), F("Rename key failed"));
+  t->assertEqual(ts.writeIdxDataCaptor.get(), F("bag=45\near=3\nfan=1\n"), F("Unexpected index data after rename key"));
+
+  ts.onRemoveReturn = true;
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxRenameKey_keyDoesntExist(TestInvocation *t) {
+  delay(100);
+  t->setName(F("Rename index key - key doesn't exist"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->assert(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
+  t->assert(!sdStorage->idxRename(&ts, myIdx, "foo", "bag", txn), F("Rename key should have failed"));
+
+  ts.onRemoveReturn = true;
+  t->assert(txn, F("txn is null"));
+  t->assert(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxLookup(TestInvocation *t) {
+  t->setName(F("Index lookup"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\nbar=\n"));
+
+  Index myIdx(F("myIndex"));
+  char buffer[10] = { '\0' };
+  t->assert(sdStorage->idxLookup(myIdx, "egg", buffer, 64, &ts), F("Scan failed"));
+  t->assertEqual(buffer, F("45"));
+  char buffer1[10] = { '\0' };
+  t->assert(!sdStorage->idxLookup(myIdx, "foo", buffer, 10, &ts), F("Expected failure"));
+  char buffer2[10] = { '\0' };
+  t->assert(sdStorage->idxLookup(myIdx, "bar", buffer, 10, &ts), F("Scan failed"));
+  t->assert(isEmpty(buffer2), F("Expected empty buffer"));
+}
+
+void testIdxHasKey(TestInvocation *t) {
+  t->setName(F("Index key exists"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+
+  Index myIdx(F("myIndex"));
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
+  t->assert(sdStorage->idxHasKey(myIdx, "ear", &ts), F("Key should have existed"));
+  t->assert(!sdStorage->idxHasKey(myIdx, "lap", &ts), F("Key should not have existed"));
+}
+
+void testIdxSearchResults(TestInvocation *t) {
+  t->setName(F("SearchResults struct"));
+  sdstorage::SearchResults* sr = new sdstorage::SearchResults("a");
+  t->assertEqual(sr->searchPrefix, F("a"));
+  delete sr;
+}
+
+void testIdxPrefixSearch_noResults(TestInvocation *t) {
+  t->setName(F("Index prefix search with no results"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // index file exists
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("a");
+  t->assert(sdStorage->idxPrefixSearch(myIdx, &sr, &ts), F("idxPrefixSearch failed"));
+  t->assert(!sr.matchResult, F("Should have found no matches"));
+  t->assert(!sr.trieResult, F("Trie results should be empty"));
+  t->assert(!sr.trieMode, F("Should not have switched to trie mode"));
+}
+
+void testIdxPrefixSearch_emptySearchString(TestInvocation *t) {
+  t->setName(F("Index prefix search with empty search string"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n"));
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("");
+  sdStorage->idxPrefixSearch(myIdx, &sr, &ts);
+  t->assert(sr.matchResult, F("matchResult should be populated"));
+
+  char* keys[] = { "ear", "egg", "era", "erf", "fan", "glob" };
+  char* values[] = { "3", "45", "12", "20", "1", "" };
+  sdstorage::KeyValue* kv = sr.matchResult;
+
+  for (uint8_t i = 0; i < 6; i++) {
+    t->assert(kv, F("Result should not be nullptr"));
+    t->assertEqual(kv->key, keys[i], F("Incorrect key result"));
+    t->assertEqual(kv->value, values[i], F("Incorrect value result"));
+    kv = kv->next;
+  }
+  t->assert(!kv, F("Unexpected extra results"));
+}
+
+void testIdxPrefixSearch_under10Matches(TestInvocation *t) {
+  t->setName(F("Index prefix search with <10 matches"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nera=12\nerf=20\nfan=1\nglob=\n"));
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("e");
+  t->assertEqual(sr.searchPrefix, F("e"), F("Wrong search prefix passed"));
+  sdStorage->idxPrefixSearch(myIdx, &sr, &ts);
+  t->assertEqual(sr.searchPrefix, F("e"), F("Search prefix changed!"));
+  t->assert(sr.matchResult, F("matchResult should be populated"));
+  t->assert(!sr.trieResult, F("trieResult should not be populated"));
+  t->assert(!sr.trieMode, F("Should not have switched to trie mode"));
+
+  char* keys[] = { "ear", "egg", "era", "erf" };
+  char* values[] = { "3", "45", "12", "20" };
+  sdstorage::KeyValue* kv = sr.matchResult;
+
+  for (uint8_t i = 0; i < 4; i++) {
+    t->assert(kv, F("Result should not be nullptr"));
+    t->assertEqual(kv->key, keys[i], F("Incorrect key result"));
+    t->assertEqual(kv->value, values[i], F("Incorrect value result"));
+    kv = kv->next;
+  }
+  t->assert(!kv, F("Unexpected extra results"));
+}
+
+void testIdxPrefixSearch_over10Matches(TestInvocation *t) {
+  t->setName(F("Index prefix search with >10 matches"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = strdup(F("are=1\near=3\neast=23\ned=209\negg=45\nent=65\nera=12\nerf=20\neta=2\netre=98\neva=4\nexit=4\nfan=1\nglob=\n"));
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("e");
+  sdStorage->idxPrefixSearch(myIdx, &sr, &ts);
+  t->assert(!sr.matchResult, F("matchResult should not be populated"));
+  t->assert(sr.trieResult, F("trieResult should be populated"));
+  t->assert(sr.trieMode, F("Should have switched to trie mode"));
+
+  char* keys[] = { "a", "d", "g", "n", "r", "t", "v", "x" };
+  char* values[] = { "", "209", "", "", "", "", "", "" };
+  sdstorage::KeyValue* kv = sr.trieResult;
+
+  for (uint8_t i = 0; i < 8; i++) {
+    t->assert(kv, F("Result should not be nullptr"));
+    t->assertEqual(kv->key, keys[i], F("Incorrect key result"));
+    t->assertEqual(kv->value, values[i], F("Incorrect value result"));
+    kv = kv->next;
+  }
+  t->assert(!kv, F("Unexpected extra results"));
+}
+
+
 void setup() {
   Serial.begin(9600);
   while (!Serial);
@@ -543,7 +714,16 @@ void setup() {
     testIdxUpsert_betweenLines,
     testIdxUpsert_lastLine,
     testIdxUpsert_updateLine,
-    testIdxRemove
+    testIdxRemove,
+    testIdxRenameKey_happyPath,
+    testIdxRenameKey_keyDoesntExist,
+    testIdxLookup,
+    testIdxHasKey,
+    testIdxSearchResults,
+    testIdxPrefixSearch_noResults,
+    testIdxPrefixSearch_emptySearchString,
+    testIdxPrefixSearch_under10Matches,
+    testIdxPrefixSearch_over10Matches
   };
 
   runTestSuiteShowMem(tests, before, nullptr);

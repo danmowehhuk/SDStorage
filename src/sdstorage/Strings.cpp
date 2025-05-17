@@ -42,6 +42,14 @@ namespace SDStorageStrings {
     return result;    
   }
 
+  bool startsWith(const char* str, const char* prefix) {
+    if (!str || !prefix) return false;
+    while (*prefix) {
+      if (*str++ != *prefix++) return false;
+    }
+    return true;
+  }
+
   bool endsWith(const char* str, const char* suffix) {
     if (!str || !suffix) return false;
     size_t strLen = strlen(str);

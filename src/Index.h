@@ -60,6 +60,46 @@ namespace sdstorage {
     };
   };
 
+  struct KeyValue {
+    char* key;
+    char* value;
+    KeyValue* next = nullptr;
+    KeyValue(const char* key, const char* value): key(strdup(key)), value(strdup(value)) {};
+    ~KeyValue() {
+      if (key) free(key);
+      if (value) free(value);
+      key = nullptr;
+      value = nullptr;
+      KeyValue* current = this->next;
+      while (current != nullptr) {
+        KeyValue* toDelete = current;
+        current = current->next;
+        toDelete->next = nullptr;
+        delete toDelete;
+      }
+    }
+  };
+
+  struct SearchResults {
+    char* searchPrefix;
+    bool trieMode = false;
+    uint32_t trieBloom[3] = {0};
+    uint8_t matchCount = 0;
+    KeyValue* matchResult = nullptr;
+    KeyValue* trieResult = nullptr;
+    SearchResults(const char* searchPrefix): searchPrefix(strdup(searchPrefix)) {};
+    ~SearchResults() {
+      if (searchPrefix) free(searchPrefix);
+      searchPrefix = nullptr;
+      if (matchResult) {
+        delete matchResult;
+      }
+      if (trieResult) {
+        delete trieResult;
+      }
+    }
+  };
+
 };
 
 

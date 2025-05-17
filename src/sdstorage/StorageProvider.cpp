@@ -154,3 +154,24 @@ bool StorageProvider::_updateIndex(
   return true;
 }
 
+bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, void* statePtr, 
+      void* testState = nullptr) {
+  Stream* src;
+#if defined(__SDSTORAGE_TEST)
+  src = _sd.readIndexFileStream(indexFilename, testState);
+#else
+  File srcFile = _sd.open(indexFilename, FILE_READ);
+  if (!srcFile) return false;
+  src = &srcFile;
+#endif
+  _streams.pipe(src, nullptr, filter, statePtr);
+#if defined(__SDSTORAGE_TEST)
+  StringStream* ss = static_cast<StringStream*>(src);
+  delete ss;
+#else
+  srcFile.close();
+#endif
+  return true;
+}
+
+

@@ -116,6 +116,16 @@ class SDStorage {
     bool idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
       return _idxManager->idxRename(testState, idx, oldKey, newKey, txn);
     };
+    bool idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
+      return _idxManager->idxLookup(idx, key, buffer, bufferSize, testState);
+    };
+    bool idxHasKey(Index idx, const char* key, void* testState = nullptr) {
+      return _idxManager->idxHasKey(idx, key, testState);
+    };
+    bool idxPrefixSearch(Index idx, SearchResults* results, void* testState = nullptr) {
+      return _idxManager->idxPrefixSearch(idx, results, testState);
+    };
+
 
     /*
      * TRANSACTION OPERATIONS

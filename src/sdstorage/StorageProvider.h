@@ -51,6 +51,8 @@ class StorageProvider {
     bool _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
     bool _updateIndex(const char* indexFilename, const char* tmpFilename, 
           StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
+    bool _scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, 
+          void* statePtr, void* testState = nullptr);
 
     friend class SDStorage;
     friend class TransactionManager;
