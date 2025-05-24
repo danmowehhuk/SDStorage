@@ -37,6 +37,9 @@ class Transaction: public StreamableDTO {
     FileHelper* _fileHelper;
 
     Transaction(FileHelper* fileHelper);
+    Transaction(FileHelper* fileHelper, const char* txnFilename);
+
+    void setBaseFilename(const char* shortFilename);
 
     // Sequence restarts from 0 with every reboot, so it's vital that
     // the SDStorage::fsck() process cleans up any lingering

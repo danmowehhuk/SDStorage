@@ -9,11 +9,12 @@
 #else
   #include <SdFat.h>
 #endif
+#include "Transaction.h"
 
 class StorageProvider {
 
   public:
-    StorageProvider(uint8_t sdCsPin) {};
+    StorageProvider(uint8_t sdCsPin): _sdCsPin(sdCsPin) {};
 
     // Disable moving and copying
     StorageProvider(StorageProvider&& other) = delete;
@@ -44,7 +45,7 @@ class StorageProvider {
     bool _mkdir(const char* filename, void* testState = nullptr);
     bool _loadFromStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
     bool _writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
-    bool _writeTxnToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool _writeTxnToStream(const char* filename, Transaction* txn, void* testState = nullptr);
     bool _isDir(const char* filename, void* testState = nullptr);
     bool _remove(const char* filename, void* testState = nullptr);
     bool _rename(const char* oldFilename, const char* newFilename, void* testState = nullptr);

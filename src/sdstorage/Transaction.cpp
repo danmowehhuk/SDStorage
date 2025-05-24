@@ -11,17 +11,38 @@ Transaction::Transaction(FileHelper* fileHelper):
   char idBuffer[12];
   static const char fmt[] PROGMEM = "%u";
   snprintf_P(idBuffer, sizeof(idBuffer), fmt, _idSeq++);
+  setBaseFilename(idBuffer);
+}
 
-  char* workDir = fileHelper->getWorkDir();
+Transaction::Transaction(FileHelper* fileHelper, const char* txnFilename):
+      StreamableDTO(), _fileHelper(fileHelper) {
+  const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  if (endsWith(txnFilename, commitExtension)) {
+    setCommitted();    
+  }
+  free(commitExtension);
+  char shortName[13];
+  _fileHelper->getFilenameFromFullName(txnFilename, shortName, sizeof(shortName));
+
+  // trim off the file extension
+  char* dot = strchr(shortName, '.');
+  if (dot) {
+    *dot = '\0';
+  }
+  setBaseFilename(shortName);
+}
+
+void Transaction::setBaseFilename(const char* shortFilename) {
+  char* workDir = _fileHelper->getWorkDir();
   size_t workDirLen = strlen(workDir);
-  size_t idLen = strlen(idBuffer);
-  _baseFilename = new char[workDirLen + idLen + 2](); // +1 for '/' +1 for '\0'
+  size_t shortNameLen = strlen(shortFilename);
+  _baseFilename = new char[workDirLen + shortNameLen + 2](); // +1 for '/' +1 for '\0'
   char* p = _baseFilename;
   memcpy(p, workDir, workDirLen);
   p += workDirLen;
   *p++ = '/';
-  memcpy(p, idBuffer, idLen);
-  p += idLen;
+  memcpy(p, shortFilename, shortNameLen);
+  p += shortNameLen;
   *p = '\0'; // null-terminate
 }
 

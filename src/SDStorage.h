@@ -110,17 +110,57 @@ class SDStorage {
     bool idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr) {
       return _idxManager->idxRemove(testState, idx, key, txn);
     };
+    bool idxRemove(Index idx, const __FlashStringHelper* key, Transaction* txn = nullptr) {
+      char* ramKey = strdup(key);
+      bool result = _idxManager->idxRemove(idx, ramKey, txn);
+      free(ramKey);
+      return result;
+    };
+    bool idxRemove(void* testState, Index idx, const __FlashStringHelper* key, Transaction* txn = nullptr) {
+      char* ramKey = strdup(key);
+      bool result = _idxManager->idxRemove(testState, idx, ramKey, txn);
+      free(ramKey);
+      return result;
+    };
     bool idxRename(Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
       return _idxManager->idxRename(idx, oldKey, newKey, txn);
     };
     bool idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
       return _idxManager->idxRename(testState, idx, oldKey, newKey, txn);
     };
+    bool idxRename(Index idx, const __FlashStringHelper* oldKey, const __FlashStringHelper* newKey, Transaction* txn = nullptr) {
+      char* ramOldKey = strdup(oldKey);
+      char* ramNewKey = strdup(newKey);
+      bool result = _idxManager->idxRename(idx, ramOldKey, ramNewKey, txn);
+      free(ramOldKey);
+      free(ramNewKey);
+      return result;
+    };
+    bool idxRename(void* testState, Index idx, const __FlashStringHelper* oldKey, const __FlashStringHelper* newKey, Transaction* txn = nullptr) {
+      char* ramOldKey = strdup(oldKey);
+      char* ramNewKey = strdup(newKey);
+      bool result = _idxManager->idxRename(testState, idx, ramOldKey, ramNewKey, txn);
+      free(ramOldKey);
+      free(ramNewKey);
+      return result;
+    };
     bool idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
       return _idxManager->idxLookup(idx, key, buffer, bufferSize, testState);
     };
+    bool idxLookup(Index idx, const __FlashStringHelper* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
+      char* ramKey = strdup(key);
+      bool result = _idxManager->idxLookup(idx, ramKey, buffer, bufferSize, testState);
+      free(ramKey);
+      return result;
+    };
     bool idxHasKey(Index idx, const char* key, void* testState = nullptr) {
       return _idxManager->idxHasKey(idx, key, testState);
+    };
+    bool idxHasKey(Index idx, const __FlashStringHelper* key, void* testState = nullptr) {
+      char* ramKey = strdup(key);
+      bool result = _idxManager->idxHasKey(idx, ramKey, testState);
+      free(ramKey);
+      return result;
     };
     bool idxPrefixSearch(Index idx, SearchResults* results, void* testState = nullptr) {
       return _idxManager->idxPrefixSearch(idx, results, testState);

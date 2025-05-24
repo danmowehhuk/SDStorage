@@ -13,12 +13,15 @@ bool SDStorage::begin(void* testState) {
     const char* secondSlash = strchr(_fileHelper.getRootDir() + 1, '/');
     if (secondSlash != nullptr) break; // Invalid root dir (subdirectories not allowed)
     if (!_storageProvider.begin()) break;
-    if (!_storageProvider._exists(_fileHelper.getRootDir(), testState) 
-          && !_storageProvider._mkdir(_fileHelper.getRootDir(), testState)) break;
-    if (!_storageProvider._exists(_fileHelper.getIdxDir(), testState) 
-          && !_storageProvider._mkdir(_fileHelper.getIdxDir(), testState)) break;
-    if (!_storageProvider._exists(_fileHelper.getWorkDir(), testState) 
-          && !_storageProvider._mkdir(_fileHelper.getWorkDir(), testState)) break;
+    if (!_storageProvider._exists(_fileHelper.getRootDir(), testState)) {
+      if (!_storageProvider._mkdir(_fileHelper.getRootDir(), testState)) break;
+    } 
+    if (!_storageProvider._exists(_fileHelper.getIdxDir(), testState)) {
+      if (!_storageProvider._mkdir(_fileHelper.getIdxDir(), testState)) break;
+    } 
+    if (!_storageProvider._exists(_fileHelper.getWorkDir(), testState)) {
+      if (!_storageProvider._mkdir(_fileHelper.getWorkDir(), testState)) break;
+    } 
     if (!fsck()) {
 #if defined(DEBUG)
       Serial.println(F("SDStorage repair failed"));
@@ -67,13 +70,13 @@ bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, 
   // which could corrupt data, so do not save newer format dtos.
   if (dto->getTypeId() != -1 && (dto->getSerialVersion() < dto->getDeserializedVersion())) {
 #if (defined(DEBUG))
-    Serial.print("Cannot write v");
+    Serial.print(F("Cannot write v"));
     Serial.print(dto->getDeserializedVersion());
-    Serial.print(" object with v");
+    Serial.print(F(" object with v"));
     Serial.print(dto->getSerialVersion());
-    Serial.print(" custom DTO (typeId=");
+    Serial.print(F(" custom DTO (typeId="));
     Serial.print(dto->getTypeId());
-    Serial.println(")");
+    Serial.println(F(")"));
 #endif
     return false;
   }
@@ -216,24 +219,59 @@ bool SDStorage::fsck() {
   SdFat* _sd = &(_storageProvider._sd);
   StreamableManager* _streams = &(_storageProvider._streams);
   File workDirFile = _sd->open(_fileHelper.getWorkDir());
-  if (!workDirFile) return false;
-  if (!workDirFile.isDirectory()) return false;
+  if (!workDirFile) {
+#if (defined(DEBUG))
+    Serial.print(F("ERROR: SDStorage::fsck() - Could not open work dir: "));
+    Serial.println(_fileHelper.getWorkDir());
+#endif
+    return false;
+  }
+  if (!workDirFile.isDirectory()) {
+#if (defined(DEBUG))
+    Serial.print(F("ERROR: SDStorage::fsck() - Not a directory: "));
+    Serial.println(_fileHelper.getWorkDir());
+#endif
+    return false;
+  }
+  bool notifyDirty = true;
   const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  static const char fmt[] PROGMEM = "%s/%s"; 
   while (true) {
     File file = workDirFile.openNextFile();
     if (!file) break; // no more files
-    char filename[_fileHelper.MAX_FILENAME_LENGTH];
-    file.getName(filename, sizeof(_fileHelper.MAX_FILENAME_LENGTH));
+    if (notifyDirty) {
+#if (defined(DEBUG))
+      Serial.println(F("SDStorage::fsck() - Recovering filesystem..."));
+#endif
+      notifyDirty = false;
+    }
+    char shortname[13];
+    file.getName(shortname, 13);
+    char filename[FileHelper::MAX_FILENAME_LENGTH];
+    snprintf_P(filename, FileHelper::MAX_FILENAME_LENGTH, fmt, _fileHelper.getWorkDir(), shortname);
+
     if (endsWith(filename, commitExtension)) {
       // Leftover commit file needs to be applied
-      Transaction* txn = new Transaction(&_fileHelper);
+      Transaction* txn = new Transaction(&_fileHelper, filename);
       _streams->load(&file, txn);
       file.close();
       bool commitErr = true;
       do {
-        if (_txnManager->applyChanges(txn)) break;
+#if (defined(DEBUG))
+        Serial.print(F("  Applying finalized transaction: "));
+        Serial.print(filename);
+#endif
+        if (!_txnManager->applyChanges(txn)) {
+#if (defined(DEBUG))
+          Serial.println(F(" - FAILED"));
+#endif
+          break;
+        }
         _txnManager->cleanupTxn(txn);
         commitErr = false;
+#if (defined(DEBUG))
+        Serial.println(F(" - SUCCESS"));
+#endif
       } while (false);
       if (commitErr) {
         /*
@@ -251,17 +289,26 @@ bool SDStorage::fsck() {
     }
   }
   free(commitExtension);
+  workDirFile.close();
 
   // All commits successfully applied, so delete all remaining files.
   // This effectively aborts any incomplete transactions.
-  workDirFile.close();
   workDirFile = _sd->open(_fileHelper.getWorkDir());
   while (true) {
     File file = workDirFile.openNextFile();
     if (!file) break; // no more files
-    char filename[_fileHelper.MAX_FILENAME_LENGTH];
-    file.getName(filename, sizeof(_fileHelper.MAX_FILENAME_LENGTH));
+    char shortname[13];
+    file.getName(shortname, 13);
+    char filename[FileHelper::MAX_FILENAME_LENGTH];
+    snprintf_P(filename, FileHelper::MAX_FILENAME_LENGTH, fmt, _fileHelper.getWorkDir(), shortname);
+#if (defined(DEBUG))
+    Serial.print(F("  Cleaning up: "));
+    Serial.print(filename);
+#endif
     if (!_sd->remove(filename)) {
+#if (defined(DEBUG))
+      Serial.println(F(" - FAILED"));
+#endif
       /*
        * Cleanup failed, but any outstanding commits were applied, so nothing
        * is in an inconsistent state, although the workdir needs to be cleaned up
@@ -274,8 +321,13 @@ bool SDStorage::fsck() {
 #endif
       if (_errFunction != nullptr) _errFunction();
       return false;
+    } else {
+#if (defined(DEBUG))
+      Serial.println(F(" - SUCCESS"));
+#endif
     }
   }
+  workDirFile.close();
 #endif
   return true;
 }

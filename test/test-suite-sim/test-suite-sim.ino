@@ -501,7 +501,7 @@ void testIdxRemove(TestInvocation *t) {
   t->assert(txn, F("Create transaction failed"));
 
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
-  t->assert(sdStorage->idxRemove(&ts, myIdx, "ear", txn), F("Remove key failed"));
+  t->assert(sdStorage->idxRemove(&ts, myIdx, F("ear"), txn), F("Remove key failed"));
   t->assertEqual(ts.writeIdxDataCaptor.get(), F("egg=45\nfan=1\n"), F("Unexpected index data after remove key"));
 
   ts.onRemoveReturn = true;
@@ -521,7 +521,7 @@ void testIdxRenameKey_happyPath(TestInvocation *t) {
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true; // simplify the rest of the test
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
-  t->assert(sdStorage->idxRename(&ts, myIdx, "egg", "bag", txn), F("Rename key failed"));
+  t->assert(sdStorage->idxRename(&ts, myIdx, F("egg"), F("bag"), txn), F("Rename key failed"));
   t->assertEqual(ts.writeIdxDataCaptor.get(), F("bag=45\near=3\nfan=1\n"), F("Unexpected index data after rename key"));
 
   ts.onRemoveReturn = true;
@@ -543,7 +543,7 @@ void testIdxRenameKey_keyDoesntExist(TestInvocation *t) {
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true; // simplify the rest of the test
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
-  t->assert(!sdStorage->idxRename(&ts, myIdx, "foo", "bag", txn), F("Rename key should have failed"));
+  t->assert(!sdStorage->idxRename(&ts, myIdx, F("foo"), F("bag"), txn), F("Rename key should have failed"));
 
   ts.onRemoveReturn = true;
   t->assert(txn, F("txn is null"));
@@ -559,12 +559,12 @@ void testIdxLookup(TestInvocation *t) {
 
   Index myIdx(F("myIndex"));
   char buffer[10] = { '\0' };
-  t->assert(sdStorage->idxLookup(myIdx, "egg", buffer, 64, &ts), F("Scan failed"));
+  t->assert(sdStorage->idxLookup(myIdx, F("egg"), buffer, 64, &ts), F("Scan failed"));
   t->assertEqual(buffer, F("45"));
   char buffer1[10] = { '\0' };
-  t->assert(!sdStorage->idxLookup(myIdx, "foo", buffer, 10, &ts), F("Expected failure"));
+  t->assert(!sdStorage->idxLookup(myIdx, F("foo"), buffer, 10, &ts), F("Expected failure"));
   char buffer2[10] = { '\0' };
-  t->assert(sdStorage->idxLookup(myIdx, "bar", buffer, 10, &ts), F("Scan failed"));
+  t->assert(sdStorage->idxLookup(myIdx, F("bar"), buffer, 10, &ts), F("Scan failed"));
   t->assert(isEmpty(buffer2), F("Expected empty buffer"));
 }
 
@@ -576,8 +576,8 @@ void testIdxHasKey(TestInvocation *t) {
 
   Index myIdx(F("myIndex"));
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
-  t->assert(sdStorage->idxHasKey(myIdx, "ear", &ts), F("Key should have existed"));
-  t->assert(!sdStorage->idxHasKey(myIdx, "lap", &ts), F("Key should not have existed"));
+  t->assert(sdStorage->idxHasKey(myIdx, F("ear"), &ts), F("Key should have existed"));
+  t->assert(!sdStorage->idxHasKey(myIdx, F("lap"), &ts), F("Key should not have existed"));
 }
 
 void testIdxSearchResults(TestInvocation *t) {

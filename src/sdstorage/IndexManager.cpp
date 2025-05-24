@@ -91,12 +91,12 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
 #endif    
   } else {
     if (!lookupState.keyExists) {
-  #if (defined(DEBUG))
+#if (defined(DEBUG))
       Serial.print(F("Key to rename '"));
       Serial.print(oldKey);
       Serial.print(F("' not in "));
       Serial.println(iTxn.idxFilename);
-  #endif
+#endif
     }
 
     if (!isEmpty(iTxn.tmpFilename) && lookupState.keyExists) {
