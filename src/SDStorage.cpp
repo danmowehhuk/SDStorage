@@ -1,3 +1,14 @@
+/*
+
+  SDStorage.cpp
+
+  SD card storage manager for StreamableDTOs with index and transaction support
+
+  Copyright (c) 2025, Dan Mowehhuk (danmowehhuk@gmail.com)
+  All rights reserved.
+
+*/
+
 #include "SDStorage.h"
 #include "sdstorage/Strings.h"
 

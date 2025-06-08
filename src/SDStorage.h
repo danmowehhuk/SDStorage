@@ -23,6 +23,12 @@
 #include "sdstorage/StorageProvider.h"
 #include "sdstorage/Strings.h"
 
+/*
+ * NOTE: SDStorage uses FAT16 file system format. File names must be 8.3 format
+ *       and directories must be 8 or fewer characters. All other FAT16 file 
+ *       naming rules apply as well.
+ */
+
 class SDStorage {
 
   public:
@@ -173,6 +179,11 @@ class SDStorage {
      * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
      * or a mixture of both. Indexes may also be provided. All will be converted to absolute canonical
      * filenames, the root directory prepended if necessary.
+     *
+     * NOTE: If a file or index is added to a transaction, then the Transaction* MUST be passed
+     *       to any write operation involving that file or index. Otherwise, SDStorage will try
+     *       to create an implicit transaction and hang because the other transaction is already
+     *       holding a lock on the file or index.
      */
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames) {
