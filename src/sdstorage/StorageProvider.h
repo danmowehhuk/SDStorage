@@ -35,16 +35,17 @@ class StorageProvider {
 #if defined(__SDSTORAGE_TEST)
     MockSdFat _sd;
 #elif defined(NO_ARDUINO)
+    // Carries FatFs's ~512-byte window buffer as static RAM (FF_FS_TINY=1
+    // in ffconf.h) - worth knowing for anyone considering a smaller AVR part.
     FATFS _fatfs;
 #else
     SdFat _sd;
 #endif
 
-#if defined(__SDSTORAGE_TEST)
-    bool begin() {
-      return _sd.begin(_sdCsPin);
-    }
-#elif defined(NO_ARDUINO)
+#if defined(NO_ARDUINO)
+    // Caller must have already called BareMetalHAL::spiBegin(sck, mosi,
+    // miso) to configure the SPI bus - this only sets the chip-select
+    // pin and mounts the filesystem over that already-configured bus.
     bool begin() {
       sdDiskSetCsPin(_sdCsPin);
       return f_mount(&_fatfs, "", 1) == FR_OK;

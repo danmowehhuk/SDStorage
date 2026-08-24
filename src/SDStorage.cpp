@@ -226,7 +226,11 @@ bool SDStorage::mkdir_P(const char* dirName, void* testState = nullptr) {
  * 
  ******/
 
-#if (!defined(__SDSTORAGE_TEST) && defined(NO_ARDUINO))
+#if defined(__SDSTORAGE_TEST)
+bool SDStorage::fsck() {
+  return true;
+}
+#elif defined(NO_ARDUINO)
 /*
  * Same recovery logic as the SdFat branch below, ported to FatFs's
  * directory API (no SdFat::File::openNextFile() equivalent in the
@@ -244,7 +248,7 @@ bool SDStorage::fsck() {
     return false;
   }
   bool notifyDirty = true;
-  const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
   static const char fmt[] PROGMEM = "%s/%s";
   while (true) {
     FILINFO fno;
@@ -292,6 +296,7 @@ bool SDStorage::fsck() {
 #if defined(DEBUG)
         SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to apply commit "));
         SDStorageHal::println(filename);
+        BareMetalHAL::delay(250); // Allow message to print before potentially crashing
 #endif
         if (_errFunction != nullptr) _errFunction();
         f_closedir(&dir);
@@ -333,6 +338,7 @@ bool SDStorage::fsck() {
 #if defined(DEBUG)
       SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to clean up work dir "));
       SDStorageHal::println(_fileHelper.getWorkDir());
+      BareMetalHAL::delay(250); // Allow message to print before potentially crashing
 #endif
       if (_errFunction != nullptr) _errFunction();
       f_closedir(&dir);
@@ -348,7 +354,6 @@ bool SDStorage::fsck() {
 }
 #else
 bool SDStorage::fsck() {
-#if (!defined(__SDSTORAGE_TEST))
   SdFat* _sd = &(_storageProvider._sd);
   StreamableManager* _streams = &(_storageProvider._streams);
   File workDirFile = _sd->open(_fileHelper.getWorkDir());
@@ -461,7 +466,6 @@ bool SDStorage::fsck() {
     }
   }
   workDirFile.close();
-#endif
   return true;
 }
 #endif

@@ -9,8 +9,13 @@ File::~File() {
 }
 
 bool File::open(const char* path, BYTE mode) {
+  // Any write/create mode against a directory path is not a valid
+  // open - only take the directory shortcut for a read-only open,
+  // matching the SdFat/MockSdFat branches' own genuine failure here.
+  static const BYTE writeModeMask = FA_WRITE | FA_CREATE_NEW | FA_CREATE_ALWAYS | FA_OPEN_ALWAYS;
   FILINFO info;
   if (f_stat(path, &info) == FR_OK && (info.fattrib & AM_DIR)) {
+    if (mode & writeModeMask) return false;
     _isDir = true;
     _open = true;
     return true;
@@ -31,7 +36,7 @@ bool File::isDirectory() const { return _isDir; }
 
 int File::available() {
   if (!_open || _isDir) return 0;
-  return f_tell(&_fil) < f_size(&_fil);
+  return f_size(&_fil) - f_tell(&_fil);
 }
 
 int File::read() {

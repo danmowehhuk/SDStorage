@@ -91,9 +91,13 @@ if [ ! -f "$TESTTOOL_SRC/TestTool.h" ]; then
 fi
 
 # -fpermissive: several SDStorage headers/.cpp files repeat a default
-# argument in both the declaration and the definition, which only
+# argument in both the declaration and the definition, and a few
+# pre-existing const-correctness violations, none of which anything but
 # Arduino's own toolchain (-fpermissive baked in) tolerates.
-COMMON_FLAGS=(-Wall -Wextra -Os -fpermissive -DNO_ARDUINO -DHAL_AVR -DF_CPU=16000000UL -mmcu=atmega2560 -ffunction-sections -fdata-sections \
+# -DDEBUG: enables this suite's own SDStorageHal::print/println
+# diagnostics, all gated #if defined(DEBUG) - without it none of that
+# code (including inside fsck()) is even compiled here.
+COMMON_FLAGS=(-Wall -Wextra -Os -fpermissive -DNO_ARDUINO -DHAL_AVR -DDEBUG -DF_CPU=16000000UL -mmcu=atmega2560 -ffunction-sections -fdata-sections \
   -I "$DIR/../../src" -I "$STREAMABLEDTO_SRC" -I "$BAREMETALHAL_SRC" -I "$TESTTOOL_SRC")
 CXXFLAGS=(-std=gnu++11 "${COMMON_FLAGS[@]}")
 CFLAGS=(-std=gnu99 "${COMMON_FLAGS[@]}")

@@ -11,6 +11,7 @@
 #include <TestTool.h>
 #include <SDStorage.h>
 #include <StreamableDTO.h>
+#include "avr/fatfs/ff.h"
 
 using namespace BareMetalHAL;
 
@@ -90,6 +91,74 @@ void testSaveLoadErase(TestInvocation* t) {
   t->verify(!sdStorage.exists(F("file1.dat")), F("file1.dat not erased"));
 }
 
+void testIndexUpsertLookupRemove(TestInvocation* t) {
+  t->setName(F("idxUpsert()/idxLookup()/idxRemove() round-trip"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~IDX/idx1.idx");
+
+  Index myIdx(F("idx1"));
+  // First upsert creates the index file (_writeIndexLine); second
+  // upsert appends a new key to an existing index (_updateIndex).
+  IndexEntry entry1(F("abc"), F("def"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entry1), F("first upsert failed"));
+  if (!t->passed()) return;
+  IndexEntry entry2(F("ghi"), F("jkl"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entry2), F("second upsert failed"));
+  if (!t->passed()) return;
+
+  // idxHasKey()/idxLookup() both scan the index via _scanIndex.
+  t->verify(sdStorage.idxHasKey(myIdx, "abc"), F("key 'abc' not found"));
+  t->verify(sdStorage.idxHasKey(myIdx, "ghi"), F("key 'ghi' not found"));
+  char buf[10];
+  t->verify(sdStorage.idxLookup(myIdx, "abc", buf, 10), F("lookup failed"));
+  t->verifyEqual(buf, F("def"));
+
+  // Removal also goes through _updateIndex, rewriting the index
+  // without the removed key.
+  t->verify(sdStorage.idxRemove(myIdx, "abc"), F("remove failed"));
+  if (!t->passed()) return;
+  t->verify(!sdStorage.idxHasKey(myIdx, "abc"), F("key 'abc' still present after remove"));
+  t->verify(sdStorage.idxHasKey(myIdx, "ghi"), F("key 'ghi' unexpectedly removed too"));
+
+  // cleanup
+  f_unlink("/TESTROOT/~IDX/idx1.idx");
+}
+
+void testFsckRecoversStaleTransaction(TestInvocation* t) {
+  t->setName(F("begin() (fsck) recovers a stale, never-committed transaction"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  sdStorage.erase(F("orphan.dat"));
+
+  // Simulate a power loss mid-transaction: beginTxn() writes a real
+  // .txn marker file to ~WORK immediately, before any save() happens.
+  // Deliberately never commit, abort, or delete this Transaction - a
+  // real crash wouldn't either, and recovering from exactly this is
+  // fsck()'s job on the next begin().
+  Transaction* txn = sdStorage.beginTxn(F("orphan.dat"));
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // Re-running begin() re-runs fsck(), which must roll back the
+  // abandoned transaction by deleting its leftover .txn file. This
+  // exercises f_opendir/f_readdir/f_unlink deleting a directory entry
+  // while that same directory's read cursor is still open - the
+  // single highest-risk, previously-unexercised path in this port.
+  t->verify(sdStorage.begin(), F("begin() (recovery) failed"));
+  if (!t->passed()) return;
+  t->verify(!sdStorage.exists(F("orphan.dat")), F("orphan.dat should not exist (txn was never committed)"));
+
+  // ~WORK should be empty again - no leftover transaction artifacts.
+  FATFS_DIR dir;
+  FILINFO fno;
+  t->verify(f_opendir(&dir, "/TESTROOT/~WORK") == FR_OK, F("could not open ~WORK"));
+  if (t->passed()) {
+    t->verify(f_readdir(&dir, &fno) == FR_OK && fno.fname[0] == 0, F("~WORK not empty after recovery"));
+    f_closedir(&dir);
+  }
+}
+
 int main() {
   Uart0::begin(9600);
   timingInit();
@@ -99,7 +168,9 @@ int main() {
     testBegin,
     testExists_absentFile,
     testMkdir,
-    testSaveLoadErase
+    testSaveLoadErase,
+    testIndexUpsertLookupRemove,
+    testFsckRecoversStaleTransaction
   };
 
   runTestSuiteShowMem(tests, before);
