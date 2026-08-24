@@ -81,7 +81,7 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
   IndexTransaction iTxn = _makeIndexTransaction(testState, idx, txn);
   if (!iTxn.idxFilename || !iTxn.txn) return false;
 
-  boolean success = false;
+  bool success = false;
   IndexScanFilters::IdxScanCapture lookupState(oldKey);
   IndexScanFilters::IdxScanCapture state(oldKey, newKey, true);
   success = _idxScan(iTxn.idxFilename, &lookupState, testState);
@@ -213,7 +213,7 @@ bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCa
 #endif
     return false;
   }
-  boolean success = false;
+  bool success = false;
   if (_storageProvider->_exists(idxFilename, testState)) {
     success = _storageProvider->_scanIndex(idxFilename, IndexScanFilters::idxLookupFilter, state, testState);
   }

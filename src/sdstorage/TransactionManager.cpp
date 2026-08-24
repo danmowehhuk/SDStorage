@@ -76,7 +76,7 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
 #endif
     return false;
   }
-  boolean result = false;
+  bool result = false;
   if (!_storageProvider->_exists(resolvedFilename, testState)) {
     do {
       // Validate new file to be created

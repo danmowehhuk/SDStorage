@@ -29,21 +29,24 @@ void before() {
 
 void testBegin(TestInvocation* t) {
   t->setName(F("SDStorage initialization"));
-  if (!t->verify(beginSuccess, F("begin() failed"))) return;
+  t->verify(beginSuccess, F("begin() failed"));
+  if (!t->passed()) return;
   t->verify(sdFat, F("SdFat* required for test suite"));
   t->verify(sdFat->exists("/TESTROOT"), F("/TESTROOT does not exist"));
   t->verify(sdFat->exists("/TESTROOT/~WORK"), F("/TESTROOT/~WORK does not exist"));
   t->verify(sdFat->exists("/TESTROOT/~IDX"), F("/TESTROOT/~IDX does not exist"));
 
   File workDirFile = sdFat->open("/TESTROOT/~WORK");
-  if (!t->verify(!workDirFile.openNextFile(), F("/TESTROOT/~WORK not empty!"))) {
+  t->verify(!workDirFile.openNextFile(), F("/TESTROOT/~WORK not empty!"));
+  if (!t->passed()) {
     beginSuccess = false;
   }
 }
 
 void testCreateFile_empty(TestInvocation* t) {
   t->setName(F("Create an empty file"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdStorage.erase(F("file1.dat"));
 
   StreamableDTO dto;
@@ -59,7 +62,8 @@ void testCreateFile_empty(TestInvocation* t) {
 
 void testCreateFile_readAfterWrite(TestInvocation* t) {
   t->setName(F("Create and read new file"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdStorage.erase(F("file2.dat"));
 
   StreamableDTO dtoIn;
@@ -77,7 +81,8 @@ void testCreateFile_readAfterWrite(TestInvocation* t) {
 
 void testCreateFile_deleteAfterWrite(TestInvocation* t) {
   t->setName(F("Create and erase new file"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdStorage.erase(F("file3.dat"));
 
   StreamableDTO dtoIn;
@@ -91,7 +96,8 @@ void testCreateFile_deleteAfterWrite(TestInvocation* t) {
 
 void testCreateDirectory(TestInvocation* t) {
   t->setName(F("Create directory"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdStorage.erase(F("myDir"));
 
   t->verify(!sdStorage.exists(F("myDir")), F("myDir already exists"));
@@ -106,7 +112,8 @@ void testCreateDirectory(TestInvocation* t) {
 
 void testCreateFile_inDirectory(TestInvocation* t) {
   t->setName(F("Create a file in a directory"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdStorage.erase(F("/TESTROOT/dir1/myDTO.dat"));
   sdStorage.erase(F("/TESTROOT/dir1"));
 
@@ -126,7 +133,8 @@ void testCreateFile_inDirectory(TestInvocation* t) {
 
 void testCreateIndex(TestInvocation* t) {
   t->setName(F("Create an index"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~IDX/idx1.idx");
 
   t->verify(!sdFat->exists("/TESTROOT/~IDX/idx1.idx"), F("Index file already exists"));
@@ -143,7 +151,8 @@ void testCreateIndex(TestInvocation* t) {
 
 void testIndexUpsert(TestInvocation* t) {
   t->setName(F("Upsert an index"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~IDX/idx2.idx");
 
   t->verify(!sdFat->exists("/TESTROOT/~IDX/idx2.idx"), F("Index file already exists"));
@@ -171,7 +180,8 @@ void testIndexUpsert(TestInvocation* t) {
 
 void testIndexRemoveKey(TestInvocation* t) {
   t->setName(F("Remove a key from an index"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~IDX/idx3.idx");
 
   t->verify(!sdFat->exists("/TESTROOT/~IDX/idx3.idx"), F("Index file already exists"));
@@ -189,7 +199,8 @@ void testIndexRemoveKey(TestInvocation* t) {
 
 void testTransaction_success(TestInvocation* t) {
   t->setName(F("Perform successful transaction"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~IDX/idx4.idx");
   sdStorage.erase(F("file4.dat"));
 
@@ -219,7 +230,8 @@ void testTransaction_success(TestInvocation* t) {
 
 void testTransaction_abort(TestInvocation* t) {
   t->setName(F("Abort a transaction"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~IDX/idx5.idx");
   sdStorage.erase(F("file5.dat"));
 
@@ -242,7 +254,8 @@ void testTransaction_abort(TestInvocation* t) {
 
 void testFsck(TestInvocation* t) {
   t->setName(F("Filesystem check and repair (fsck)"));
-  if (!t->verify(beginSuccess, F("SKIPPED"))) return;
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
   const char* fname1 = "/TESTROOT/fsck1.dat";
   const char* fname2 = "/TESTROOT/fsck2.dat";
   const char* fname3 = "/TESTROOT/~WORK/orphan.tmp";
@@ -251,7 +264,8 @@ void testFsck(TestInvocation* t) {
   sdFat->remove(fname3);
 
   File workDirFile = sdFat->open("/TESTROOT/~WORK");
-  if (!t->verify(!workDirFile.openNextFile(), F("/TESTROOT/~WORK not empty!"))) return;
+  t->verify(!workDirFile.openNextFile(), F("/TESTROOT/~WORK not empty!"));
+  if (!t->passed()) return;
   workDirFile.close();
 
   // Create some files in the ~WORK dir simulating a power loss during 
@@ -260,22 +274,31 @@ void testFsck(TestInvocation* t) {
   // in any transaction
   Transaction* uncommitted = helper.newTransaction(&sdStorage);
   helper.addToTxn(uncommitted, fname1);
-  if (!t->verify(helper.writeTxn(sdFat, uncommitted, fname1), F("writeTxn failed for fname1"))) return;
+  t->verify(helper.writeTxn(sdFat, uncommitted, fname1), F("writeTxn failed for fname1"));
+  if (!t->passed()) return;
   char* tmpFilename1 = helper.getTmpFilename(uncommitted, fname1);
-  if (!t->verify(helper.createFile(sdFat, tmpFilename1), F("create fname1 tmpfile failed"))) return;
-  if (!t->verify(!sdFat->exists(fname1), F("fname1 should NOT have been written"))) return;
-  if (!t->verify(sdFat->exists(tmpFilename1), F("fname1 tmpfile should have been written"))) return;
+  t->verify(helper.createFile(sdFat, tmpFilename1), F("create fname1 tmpfile failed"));
+  if (!t->passed()) return;
+  t->verify(!sdFat->exists(fname1), F("fname1 should NOT have been written"));
+  if (!t->passed()) return;
+  t->verify(sdFat->exists(tmpFilename1), F("fname1 tmpfile should have been written"));
+  if (!t->passed()) return;
 
   Transaction* committed = helper.newTransaction(&sdStorage);
   helper.commit(committed);
   helper.addToTxn(committed, fname2);
-  if (!t->verify(helper.writeTxn(sdFat, committed, fname2), F("writeTxn failed for fname2"))) return;
+  t->verify(helper.writeTxn(sdFat, committed, fname2), F("writeTxn failed for fname2"));
+  if (!t->passed()) return;
   char* tmpFilename2 = helper.getTmpFilename(committed, fname2);
-  if (!t->verify(helper.createFile(sdFat, tmpFilename2), F("create fname2 tmpfile failed"))) return;
-  if (!t->verify(!sdFat->exists(fname2), F("fname2 should NOT have been written"))) return;
-  if (!t->verify(sdFat->exists(tmpFilename2), F("fname2 tmpfile should have been written"))) return;
+  t->verify(helper.createFile(sdFat, tmpFilename2), F("create fname2 tmpfile failed"));
+  if (!t->passed()) return;
+  t->verify(!sdFat->exists(fname2), F("fname2 should NOT have been written"));
+  if (!t->passed()) return;
+  t->verify(sdFat->exists(tmpFilename2), F("fname2 tmpfile should have been written"));
+  if (!t->passed()) return;
 
-  if (!t->verify(helper.createFile(sdFat, fname3), F("create fname3 failed"))) return;
+  t->verify(helper.createFile(sdFat, fname3), F("create fname3 failed"));
+  if (!t->passed()) return;
   errThrown = false;
   delete uncommitted;
   delete committed;

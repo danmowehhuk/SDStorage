@@ -6,6 +6,11 @@
 #include <StreamableManager.h>
 #if defined(__SDSTORAGE_TEST)
   #include "../../test/test-suite-sim/MockSdFat.h"
+#elif defined(NO_ARDUINO)
+  #include "../hal/File.h"
+  #include <BareMetalHAL.h>
+  #include "avr/fatfs/ff.h"
+  #include "avr/fatfs/sdcard.h"
 #else
   #include <SdFat.h>
 #endif
@@ -29,13 +34,26 @@ class StorageProvider {
     StreamableManager _streams;
 #if defined(__SDSTORAGE_TEST)
     MockSdFat _sd;
+#elif defined(NO_ARDUINO)
+    FATFS _fatfs;
 #else
     SdFat _sd;
 #endif
 
+#if defined(__SDSTORAGE_TEST)
     bool begin() {
       return _sd.begin(_sdCsPin);
     }
+#elif defined(NO_ARDUINO)
+    bool begin() {
+      sdDiskSetCsPin(_sdCsPin);
+      return f_mount(&_fatfs, "", 1) == FR_OK;
+    }
+#else
+    bool begin() {
+      return _sd.begin(_sdCsPin);
+    }
+#endif
 
     /*
      * Wrap the underlying calls to _sd so that a state capture object

@@ -13,6 +13,15 @@ using FlashStr = __FlashStringHelper;
 using FlashStr = BareMetalHAL::FlashStr;
 // F() is already provided by BareMetalHAL.h
 
+// On Arduino these come in transitively via Arduino.h. Off Arduino,
+// nothing else pulls them in, and this library's C++ files use them
+// throughout (strlen/strcmp/strchr/strncpy, malloc/free, isspace,
+// snprintf_P).
+#include <string.h>
+#include <stdlib.h>
+#include <stdio.h>
+#include <ctype.h>
+
 #endif
 
 #endif

@@ -1,16 +1,19 @@
 #include "StorageProvider.h"
 
 /******
- * 
- * The following wrapper methods allow sending a state object to a 
+ *
+ * The following wrapper methods allow sending a state object to a
  * mock version of SdFat when testing on a simulator. These all expect
  * the absolute filename as returned by realFilename(...)
- * 
+ *
  ******/
 
 bool StorageProvider::_exists(const char* filename, void* testState = nullptr) {
 #if defined(__SDSTORAGE_TEST)
   return _sd.exists(filename, testState);
+#elif defined(NO_ARDUINO)
+  FILINFO info;
+  return f_stat(filename, &info) == FR_OK;
 #else
   return _sd.exists(filename);
 #endif
@@ -19,6 +22,8 @@ bool StorageProvider::_exists(const char* filename, void* testState = nullptr) {
 bool StorageProvider::_mkdir(const char* filename, void* testState = nullptr) {
 #if defined(__SDSTORAGE_TEST)
   return _sd.mkdir(filename, testState);
+#elif defined(NO_ARDUINO)
+  return f_mkdir(filename) == FR_OK;
 #else
   return _sd.mkdir(filename);
 #endif
@@ -29,6 +34,10 @@ bool StorageProvider::_writeTxnToStream(const char* filename, Transaction* txn, 
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeTxnFileStream(filename, testState);
   if (!dest) return false;
+#elif defined(NO_ARDUINO)
+  File file;
+  if (!file.open(filename, FA_CREATE_ALWAYS | FA_WRITE)) return false;
+  dest = &file;
 #else
   File file = _sd.open(filename, FILE_WRITE);
   if (!file) return false;
@@ -45,6 +54,11 @@ bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
   bool isDir = false;
 #if defined(__SDSTORAGE_TEST)
   isDir = _sd.isDirectory(filename, testState);
+#elif defined(NO_ARDUINO)
+  File file;
+  file.open(filename, FA_READ);
+  isDir = file.isDirectory();
+  file.close();
 #else
   File file = _sd.open(filename);
   isDir = file.isDirectory();
@@ -56,6 +70,8 @@ bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
 bool StorageProvider::_remove(const char* filename, void* testState = nullptr) {
 #if defined(__SDSTORAGE_TEST)
   return _sd.remove(filename, testState);
+#elif defined(NO_ARDUINO)
+  return f_unlink(filename) == FR_OK;
 #else
   return _sd.remove(filename);
 #endif
@@ -64,6 +80,8 @@ bool StorageProvider::_remove(const char* filename, void* testState = nullptr) {
 bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, void* testState = nullptr) {
 #if defined(__SDSTORAGE_TEST)
   return _sd.rename(oldFilename, newFilename, testState);
+#elif defined(NO_ARDUINO)
+  return f_rename(oldFilename, newFilename) == FR_OK;
 #else
   return _sd.rename(oldFilename, newFilename);
 #endif
@@ -73,11 +91,15 @@ bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, 
   Stream* src = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.loadFileStream(filename, testState);
+#elif defined(NO_ARDUINO)
+  File file;
+  file.open(filename, FA_READ);
+  src = &file;
 #else
   File file = _sd.open(filename, FILE_READ);
   src = &file;
 #endif
-  bool result = _streams.load(src, dto);  
+  bool result = _streams.load(src, dto);
 #if defined(__SDSTORAGE_TEST)
   StringStream* ss = static_cast<StringStream*>(src);
   delete ss;
@@ -92,12 +114,16 @@ bool StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, v
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeFileStream(filename, testState);
   if (!dest) return false;
+#elif defined(NO_ARDUINO)
+  File file;
+  if (!file.open(filename, FA_CREATE_ALWAYS | FA_WRITE)) return false;
+  dest = &file;
 #else
   File file = _sd.open(filename, FILE_WRITE);
-  if (!file) return false;  
+  if (!file) return false;
   dest = &file;
 #endif
-  _streams.send(dest, dto);  
+  _streams.send(dest, dto);
 #if (!defined(__SDSTORAGE_TEST))
   file.close();
 #endif
@@ -109,6 +135,10 @@ bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeIndexFileStream(indexFilename, testState);
   if (!dest) return false;
+#elif defined(NO_ARDUINO)
+  File file;
+  if (!file.open(indexFilename, FA_CREATE_ALWAYS | FA_WRITE)) return false;
+  dest = &file;
 #else
   File file = _sd.open(indexFilename, FILE_WRITE);
   if (!file) return false;
@@ -125,13 +155,23 @@ bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
 }
 
 bool StorageProvider::_updateIndex(
-      const char* indexFilename, const char* tmpFilename, 
+      const char* indexFilename, const char* tmpFilename,
       StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
   Stream* src = nullptr;
   Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.readIndexFileStream(indexFilename, testState);
   dest = _sd.writeIndexFileStream(tmpFilename, testState);
+#elif defined(NO_ARDUINO)
+  File srcFile;
+  if (!srcFile.open(indexFilename, FA_READ)) return false;
+  File destFile;
+  if (!destFile.open(tmpFilename, FA_CREATE_ALWAYS | FA_WRITE)) {
+    srcFile.close();
+    return false;
+  }
+  src = &srcFile;
+  dest = &destFile;
 #else
   File srcFile = _sd.open(indexFilename, FILE_READ);
   if (!srcFile) return false;
@@ -154,11 +194,15 @@ bool StorageProvider::_updateIndex(
   return true;
 }
 
-bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, void* statePtr, 
+bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, void* statePtr,
       void* testState = nullptr) {
   Stream* src = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.readIndexFileStream(indexFilename, testState);
+#elif defined(NO_ARDUINO)
+  File srcFile;
+  if (!srcFile.open(indexFilename, FA_READ)) return false;
+  src = &srcFile;
 #else
   File srcFile = _sd.open(indexFilename, FILE_READ);
   if (!srcFile) return false;
@@ -173,5 +217,4 @@ bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::F
 #endif
   return true;
 }
-
 

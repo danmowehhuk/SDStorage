@@ -226,6 +226,127 @@ bool SDStorage::mkdir_P(const char* dirName, void* testState = nullptr) {
  * 
  ******/
 
+#if (!defined(__SDSTORAGE_TEST) && defined(NO_ARDUINO))
+/*
+ * Same recovery logic as the SdFat branch below, ported to FatFs's
+ * directory API (no SdFat::File::openNextFile() equivalent in the
+ * NO_ARDUINO hal/File - directory listing goes through f_opendir/
+ * f_readdir/f_closedir directly instead).
+ */
+bool SDStorage::fsck() {
+  StreamableManager* _streams = &(_storageProvider._streams);
+  FATFS_DIR dir;
+  if (f_opendir(&dir, _fileHelper.getWorkDir()) != FR_OK) {
+#if (defined(DEBUG))
+    SDStorageHal::print(F("ERROR: SDStorage::fsck() - Could not open work dir: "));
+    SDStorageHal::println(_fileHelper.getWorkDir());
+#endif
+    return false;
+  }
+  bool notifyDirty = true;
+  const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  static const char fmt[] PROGMEM = "%s/%s";
+  while (true) {
+    FILINFO fno;
+    if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break; // no more files or error
+    if (notifyDirty) {
+#if (defined(DEBUG))
+      SDStorageHal::println(F("SDStorage::fsck() - Recovering filesystem..."));
+#endif
+      notifyDirty = false;
+    }
+    char filename[FileHelper::MAX_FILENAME_LENGTH];
+    snprintf_P(filename, FileHelper::MAX_FILENAME_LENGTH, fmt, _fileHelper.getWorkDir(), fno.fname);
+
+    if (endsWith(filename, commitExtension)) {
+      // Leftover commit file needs to be applied
+      Transaction* txn = new Transaction(&_fileHelper, filename);
+      File file;
+      if (file.open(filename, FA_READ)) {
+        _streams->load(&file, txn);
+        file.close();
+      }
+      bool commitErr = true;
+      do {
+#if (defined(DEBUG))
+        SDStorageHal::print(F("  Applying finalized transaction: "));
+        SDStorageHal::print(filename);
+#endif
+        if (!_txnManager->applyChanges(txn)) {
+#if (defined(DEBUG))
+          SDStorageHal::println(F(" - FAILED"));
+#endif
+          break;
+        }
+        _txnManager->cleanupTxn(txn);
+        commitErr = false;
+#if (defined(DEBUG))
+        SDStorageHal::println(F(" - SUCCESS"));
+#endif
+      } while (false);
+      if (commitErr) {
+        /*
+         * Something failed that should not have failed. This means the files might
+         * be in an inconsistent state. Call the supplied errFunction.
+         */
+#if defined(DEBUG)
+        SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to apply commit "));
+        SDStorageHal::println(filename);
+#endif
+        if (_errFunction != nullptr) _errFunction();
+        f_closedir(&dir);
+        free(commitExtension);
+        return false;
+      }
+    }
+  }
+  free(commitExtension);
+  f_closedir(&dir);
+
+  // All commits successfully applied, so delete all remaining files.
+  // This effectively aborts any incomplete transactions.
+  if (f_opendir(&dir, _fileHelper.getWorkDir()) != FR_OK) {
+#if (defined(DEBUG))
+    SDStorageHal::print(F("ERROR: SDStorage::fsck() - Could not reopen work dir: "));
+    SDStorageHal::println(_fileHelper.getWorkDir());
+#endif
+    return false;
+  }
+  while (true) {
+    FILINFO fno;
+    if (f_readdir(&dir, &fno) != FR_OK || fno.fname[0] == 0) break; // no more files or error
+    char filename[FileHelper::MAX_FILENAME_LENGTH];
+    snprintf_P(filename, FileHelper::MAX_FILENAME_LENGTH, fmt, _fileHelper.getWorkDir(), fno.fname);
+#if (defined(DEBUG))
+    SDStorageHal::print(F("  Cleaning up: "));
+    SDStorageHal::print(filename);
+#endif
+    if (f_unlink(filename) != FR_OK) {
+#if (defined(DEBUG))
+      SDStorageHal::println(F(" - FAILED"));
+#endif
+      /*
+       * Cleanup failed, but any outstanding commits were applied, so nothing
+       * is in an inconsistent state, although the workdir needs to be cleaned up
+       * to prevent tmp file name collisions.
+       */
+#if defined(DEBUG)
+      SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to clean up work dir "));
+      SDStorageHal::println(_fileHelper.getWorkDir());
+#endif
+      if (_errFunction != nullptr) _errFunction();
+      f_closedir(&dir);
+      return false;
+    } else {
+#if (defined(DEBUG))
+      SDStorageHal::println(F(" - SUCCESS"));
+#endif
+    }
+  }
+  f_closedir(&dir);
+  return true;
+}
+#else
 bool SDStorage::fsck() {
 #if (!defined(__SDSTORAGE_TEST))
   SdFat* _sd = &(_storageProvider._sd);
@@ -343,4 +464,5 @@ bool SDStorage::fsck() {
 #endif
   return true;
 }
+#endif
 
