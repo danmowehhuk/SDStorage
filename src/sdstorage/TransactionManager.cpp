@@ -1,4 +1,5 @@
 #include "TransactionManager.h"
+#include "../hal/SDStorageHal.h"
 
 bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) {
   bool commitSuccess = false;
@@ -19,7 +20,7 @@ bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) 
      * be in an inconsistent state. Call the supplied errFunction.
      */
 #if defined(DEBUG)
-    Serial.println(F("ERROR: TransactionManager::commitTxn"));
+    SDStorageHal::println(F("ERROR: TransactionManager::commitTxn"));
 #endif
     if (_errFunction != nullptr) _errFunction();
   }
@@ -37,8 +38,8 @@ bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
     } else if (c->storageProvider->_exists(tmpFilename, c->ts)) {
       if (!c->storageProvider->_remove(tmpFilename, c->ts)) {
 #if defined(DEBUG)
-        Serial.print(tmpFilename);
-        Serial.println(F(" could not be removed"));
+        SDStorageHal::print(tmpFilename);
+        SDStorageHal::println(F(" could not be removed"));
 #endif
         c->success = false;
         return false;
@@ -55,7 +56,7 @@ bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
      * problems. They should be cleaned up by fsck() on the next startup.
      */
 #if defined(DEBUG)
-    Serial.println(F("TransactionManager abortTxn failed"));
+    SDStorageHal::println(F("TransactionManager abortTxn failed"));
 #endif
   }
   cleanupTxn(txn, testState);
@@ -70,8 +71,8 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
   char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if defined(DEBUG)
-        Serial.print(F("canonicalFilename failed for "));
-        Serial.println(fname.name);
+        SDStorageHal::print(F("canonicalFilename failed for "));
+        SDStorageHal::println(fname.name);
 #endif
     return false;
   }
@@ -83,8 +84,8 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
       if (!FileHelper::getFilenameFromFullName(resolvedFilename, shortFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
       if (!FileHelper::isValidFAT16Filename(shortFilename)) {
 #if defined(DEBUG)
-        Serial.print(F("Invalid FAT16 filename: "));
-        Serial.println(shortFilename);
+        SDStorageHal::print(F("Invalid FAT16 filename: "));
+        SDStorageHal::println(shortFilename);
 #endif
         break;
       }
@@ -93,15 +94,15 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
       if (!FileHelper::getPathFromFilename(resolvedFilename, path, FileHelper::MAX_FILENAME_LENGTH)) break;
       if (!_storageProvider->_exists(path, testState)) {
 #if defined(DEBUG)
-        Serial.print(F("Directory does not exist: "));
-        Serial.println(path);
+        SDStorageHal::print(F("Directory does not exist: "));
+        SDStorageHal::println(path);
 #endif
         break;
       }
       if (!_storageProvider->_isDir(path, testState)) {
 #if defined(DEBUG)
-        Serial.print(F("Not a directory: "));
-        Serial.println(path);
+        SDStorageHal::print(F("Not a directory: "));
+        SDStorageHal::println(path);
 #endif
         break;
       }
@@ -117,8 +118,8 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
     char* tmpFilename = txn->getTmpFilename(resolvedFilename);
     if (tmpFilename && _storageProvider->_exists(tmpFilename, testState)) {
   #if defined(DEBUG)
-      Serial.print(F("Transaction file already exists: "));
-      Serial.println(tmpFilename);
+      SDStorageHal::print(F("Transaction file already exists: "));
+      SDStorageHal::println(tmpFilename);
   #endif
       result = false;
     }
@@ -131,21 +132,21 @@ char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename,
   if (!tmpFilename) {
 #if defined(DEBUG)
     if (isPmem) {
-      Serial.print(reinterpret_cast<const __FlashStringHelper*>(filename));
+      SDStorageHal::print(reinterpret_cast<const FlashStr*>(filename));
     } else {
-      Serial.print(filename);
+      SDStorageHal::print(filename);
     }
-    Serial.println(F(" not part of this transaction"));
+    SDStorageHal::println(F(" not part of this transaction"));
 #endif
     return nullptr;
   } else if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
 #if defined(DEBUG)
     if (isPmem) {
-      Serial.print(reinterpret_cast<const __FlashStringHelper*>(filename));
+      SDStorageHal::print(reinterpret_cast<const FlashStr*>(filename));
     } else {
-      Serial.print(filename);
+      SDStorageHal::print(filename);
     }
-    Serial.println(F(" is marked for delete"));
+    SDStorageHal::println(F(" is marked for delete"));
 #endif
     return nullptr;
   }
@@ -171,13 +172,13 @@ void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr)
   char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if defined(DEBUG)
-    Serial.println(F("cleanupTxn failed"));
+    SDStorageHal::println(F("cleanupTxn failed"));
 #endif
   }
   if (!_storageProvider->_remove(txnFilename, testState)) {
 #if defined(DEBUG)
-    Serial.print(F("Could not remove "));
-    Serial.println(txnFilename);
+    SDStorageHal::print(F("Could not remove "));
+    SDStorageHal::println(txnFilename);
 #endif
   }
   delete txn;
@@ -196,18 +197,18 @@ bool TransactionManager::applyChanges(Transaction* txn, void* testState = nullpt
     } else {
       if (c->storageProvider->_exists(filename, c->ts) && !c->storageProvider->_remove(filename, c->ts)) {
 #if defined(DEBUG)
-        Serial.print(F("Old file could not be removed: "));
-        Serial.println(filename);
+        SDStorageHal::print(F("Old file could not be removed: "));
+        SDStorageHal::println(filename);
 #endif
         c->success = false;
         return false;
       }
       if (!c->storageProvider->_rename(tmpFilename, filename, c->ts)) {
 #if defined(DEBUG)
-        Serial.print(F("Could not move "));
-        Serial.print(tmpFilename);
-        Serial.print(F(" to "));
-        Serial.println(filename);
+        SDStorageHal::print(F("Could not move "));
+        SDStorageHal::print(tmpFilename);
+        SDStorageHal::print(F(" to "));
+        SDStorageHal::println(filename);
 #endif
         c->success = false;
         return false;
@@ -226,7 +227,7 @@ bool TransactionManager::applyChanges(Transaction* txn, void* testState = nullpt
      *
      * If this ever happens, it's a bug!
      */
-    Serial.println(F("ERROR: All transaction changes NOT applied!"));
+    SDStorageHal::println(F("ERROR: All transaction changes NOT applied!"));
 #endif
     return false;
   }

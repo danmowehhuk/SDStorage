@@ -10,6 +10,7 @@
 */
 
 #include "SDStorage.h"
+#include "hal/SDStorageHal.h"
 #include "sdstorage/Strings.h"
 
 using namespace SDStorageStrings;
@@ -35,7 +36,7 @@ bool SDStorage::begin(void* testState) {
     } 
     if (!fsck()) {
 #if defined(DEBUG)
-      Serial.println(F("SDStorage repair failed"));
+      SDStorageHal::println(F("SDStorage repair failed"));
 #endif
       break;
     }
@@ -62,7 +63,7 @@ bool SDStorage::load(const char* filename, StreamableDTO* dto, bool isFilenamePm
   return result;
 }
 
-bool SDStorage::load(const __FlashStringHelper* filename, StreamableDTO* dto, void* testState = nullptr) {
+bool SDStorage::load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr) {
   return load(reinterpret_cast<const char*>(filename), dto, true, testState);
 }
 
@@ -81,13 +82,13 @@ bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, 
   // which could corrupt data, so do not save newer format dtos.
   if (dto->getTypeId() != -1 && (dto->getSerialVersion() < dto->getDeserializedVersion())) {
 #if (defined(DEBUG))
-    Serial.print(F("Cannot write v"));
-    Serial.print(dto->getDeserializedVersion());
-    Serial.print(F(" object with v"));
-    Serial.print(dto->getSerialVersion());
-    Serial.print(F(" custom DTO (typeId="));
-    Serial.print(dto->getTypeId());
-    Serial.println(F(")"));
+    SDStorageHal::print(F("Cannot write v"));
+    SDStorageHal::print(dto->getDeserializedVersion());
+    SDStorageHal::print(F(" object with v"));
+    SDStorageHal::print(dto->getSerialVersion());
+    SDStorageHal::print(F(" custom DTO (typeId="));
+    SDStorageHal::print(dto->getTypeId());
+    SDStorageHal::println(F(")"));
 #endif
     return false;
   }
@@ -115,11 +116,11 @@ bool SDStorage::save(void* testState, const char* filename, StreamableDTO* dto, 
   return result;
 }
 
-bool SDStorage::save(const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
+bool SDStorage::save(const FlashStr* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
   return save(nullptr, filename, dto, txn);
 }
 
-bool SDStorage::save(void* testState, const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
+bool SDStorage::save(void* testState, const FlashStr* filename, StreamableDTO* dto, Transaction* txn = nullptr) {
   return save(testState, reinterpret_cast<const char*>(filename), dto, txn, true);
 }
 
@@ -139,7 +140,7 @@ bool SDStorage::exists(const char* filename, bool isFilenamePmem = false, void* 
   return result;
 }
 
-bool SDStorage::exists(const __FlashStringHelper* filename, void* testState = nullptr) {
+bool SDStorage::exists(const FlashStr* filename, void* testState = nullptr) {
   return exists(reinterpret_cast<const char*>(filename), true, testState);
 }
 
@@ -156,7 +157,7 @@ bool SDStorage::erase(const char* filename, bool isFilenamePmem = false, Transac
   return erase(nullptr, filename, isFilenamePmem, txn);
 }
 
-bool SDStorage::erase(const __FlashStringHelper* filename, Transaction* txn = nullptr) {
+bool SDStorage::erase(const FlashStr* filename, Transaction* txn = nullptr) {
   if (!filename) return false;
   return erase(nullptr, filename, txn);
 }
@@ -190,7 +191,7 @@ bool SDStorage::erase(void* testState, const char* filename, bool isFilenamePmem
   return result;
 }
 
-bool SDStorage::erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr) {
+bool SDStorage::erase(void* testState, const FlashStr* filename, Transaction* txn = nullptr) {
   return erase(testState, reinterpret_cast<const char*>(filename), true, txn);
 }
 
@@ -208,7 +209,7 @@ bool SDStorage::mkdir(const char* dirName, bool isDirNamePmem = false, void* tes
   return _storageProvider._mkdir(resolvedName, testState);
 }
 
-bool SDStorage::mkdir(const __FlashStringHelper* dirName, void* testState = nullptr) {
+bool SDStorage::mkdir(const FlashStr* dirName, void* testState = nullptr) {
   return mkdir(reinterpret_cast<const char*>(dirName), true, testState);
 }
 
@@ -232,15 +233,15 @@ bool SDStorage::fsck() {
   File workDirFile = _sd->open(_fileHelper.getWorkDir());
   if (!workDirFile) {
 #if (defined(DEBUG))
-    Serial.print(F("ERROR: SDStorage::fsck() - Could not open work dir: "));
-    Serial.println(_fileHelper.getWorkDir());
+    SDStorageHal::print(F("ERROR: SDStorage::fsck() - Could not open work dir: "));
+    SDStorageHal::println(_fileHelper.getWorkDir());
 #endif
     return false;
   }
   if (!workDirFile.isDirectory()) {
 #if (defined(DEBUG))
-    Serial.print(F("ERROR: SDStorage::fsck() - Not a directory: "));
-    Serial.println(_fileHelper.getWorkDir());
+    SDStorageHal::print(F("ERROR: SDStorage::fsck() - Not a directory: "));
+    SDStorageHal::println(_fileHelper.getWorkDir());
 #endif
     return false;
   }
@@ -252,7 +253,7 @@ bool SDStorage::fsck() {
     if (!file) break; // no more files
     if (notifyDirty) {
 #if (defined(DEBUG))
-      Serial.println(F("SDStorage::fsck() - Recovering filesystem..."));
+      SDStorageHal::println(F("SDStorage::fsck() - Recovering filesystem..."));
 #endif
       notifyDirty = false;
     }
@@ -269,19 +270,19 @@ bool SDStorage::fsck() {
       bool commitErr = true;
       do {
 #if (defined(DEBUG))
-        Serial.print(F("  Applying finalized transaction: "));
-        Serial.print(filename);
+        SDStorageHal::print(F("  Applying finalized transaction: "));
+        SDStorageHal::print(filename);
 #endif
         if (!_txnManager->applyChanges(txn)) {
 #if (defined(DEBUG))
-          Serial.println(F(" - FAILED"));
+          SDStorageHal::println(F(" - FAILED"));
 #endif
           break;
         }
         _txnManager->cleanupTxn(txn);
         commitErr = false;
 #if (defined(DEBUG))
-        Serial.println(F(" - SUCCESS"));
+        SDStorageHal::println(F(" - SUCCESS"));
 #endif
       } while (false);
       if (commitErr) {
@@ -290,8 +291,8 @@ bool SDStorage::fsck() {
          * be in an inconsistent state. Call the supplied errFunction.
          */
 #if defined(DEBUG)
-        Serial.print(F("ERROR: SDStorage::fsck() - Failed to apply commit "));
-        Serial.println(filename);
+        SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to apply commit "));
+        SDStorageHal::println(filename);
         delay(250); // Allow message to print before potentially crashing
 #endif
         if (_errFunction != nullptr) _errFunction();
@@ -313,12 +314,12 @@ bool SDStorage::fsck() {
     char filename[FileHelper::MAX_FILENAME_LENGTH];
     snprintf_P(filename, FileHelper::MAX_FILENAME_LENGTH, fmt, _fileHelper.getWorkDir(), shortname);
 #if (defined(DEBUG))
-    Serial.print(F("  Cleaning up: "));
-    Serial.print(filename);
+    SDStorageHal::print(F("  Cleaning up: "));
+    SDStorageHal::print(filename);
 #endif
     if (!_sd->remove(filename)) {
 #if (defined(DEBUG))
-      Serial.println(F(" - FAILED"));
+      SDStorageHal::println(F(" - FAILED"));
 #endif
       /*
        * Cleanup failed, but any outstanding commits were applied, so nothing
@@ -326,15 +327,15 @@ bool SDStorage::fsck() {
        * to prevent tmp file name collisions.
        */
 #if defined(DEBUG)
-      Serial.print(F("ERROR: SDStorage::fsck() - Failed to clean up work dir "));
-      Serial.println(_fileHelper.getWorkDir());
+      SDStorageHal::print(F("ERROR: SDStorage::fsck() - Failed to clean up work dir "));
+      SDStorageHal::println(_fileHelper.getWorkDir());
       delay(250); // Allow message to print before potentially crashing
 #endif
       if (_errFunction != nullptr) _errFunction();
       return false;
     } else {
 #if (defined(DEBUG))
-      Serial.println(F(" - SUCCESS"));
+      SDStorageHal::println(F(" - SUCCESS"));
 #endif
     }
   }

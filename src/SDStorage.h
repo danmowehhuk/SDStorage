@@ -14,6 +14,7 @@
 
 
 #include "Index.h"
+#include "hal/FlashStr.h"
 #include <StreamableDTO.h>
 #include <StreamableManager.h>
 #include "sdstorage/FileHelper.h"
@@ -54,7 +55,7 @@ class SDStorage {
     };
     SDStorage(uint8_t sdCsPin, const char* rootDir, void (*errFunction)() = nullptr): 
           SDStorage(sdCsPin, rootDir, false, errFunction) {};
-    SDStorage(uint8_t sdCsPin, const __FlashStringHelper* rootDir, void (*errFunction)() = nullptr):
+    SDStorage(uint8_t sdCsPin, const FlashStr* rootDir, void (*errFunction)() = nullptr):
           SDStorage(sdCsPin, reinterpret_cast<const char*>(rootDir), true, errFunction) {};
     SDStorage() = delete;
     ~SDStorage() {
@@ -82,22 +83,22 @@ class SDStorage {
      * The following prepend the path with the root directory if necessary
      */
     bool mkdir(const char* dirName, bool isDirNamePmem = false, void* testState = nullptr);
-    bool mkdir(const __FlashStringHelper* dirName, void* testState = nullptr);
+    bool mkdir(const FlashStr* dirName, void* testState = nullptr);
     bool mkdir_P(const char* dirName, void* testState = nullptr);
     bool load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr);
-    bool load(const __FlashStringHelper* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr);
     bool save(const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
     bool save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
-    bool save(const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
-    bool save(void* testState, const __FlashStringHelper* filename, StreamableDTO* dto, Transaction* txn = nullptr);
+    bool save(const FlashStr* filename, StreamableDTO* dto, Transaction* txn = nullptr);
+    bool save(void* testState, const FlashStr* filename, StreamableDTO* dto, Transaction* txn = nullptr);
     bool exists(const char* filename, bool isFilenamePmem = false, void* testState = nullptr);
-    bool exists(const __FlashStringHelper* filename, void* testState = nullptr);
+    bool exists(const FlashStr* filename, void* testState = nullptr);
     bool exists_P(const char* filename, void* testState = nullptr);
     bool erase(const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr);
-    bool erase(const __FlashStringHelper* filename, Transaction* txn = nullptr);
+    bool erase(const FlashStr* filename, Transaction* txn = nullptr);
     bool erase_P(const char* filename, Transaction* txn = nullptr);
     bool erase(void* testState, const char* filename, bool isFilenamePmem = false, Transaction* txn = nullptr);
-    bool erase(void* testState, const __FlashStringHelper* filename, Transaction* txn = nullptr);
+    bool erase(void* testState, const FlashStr* filename, Transaction* txn = nullptr);
     bool erase_P(void* testState, const char* filename, Transaction* txn = nullptr);
 
     /*
@@ -116,13 +117,13 @@ class SDStorage {
     bool idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr) {
       return _idxManager->idxRemove(testState, idx, key, txn);
     };
-    bool idxRemove(Index idx, const __FlashStringHelper* key, Transaction* txn = nullptr) {
+    bool idxRemove(Index idx, const FlashStr* key, Transaction* txn = nullptr) {
       char* ramKey = strdup(key);
       bool result = _idxManager->idxRemove(idx, ramKey, txn);
       free(ramKey);
       return result;
     };
-    bool idxRemove(void* testState, Index idx, const __FlashStringHelper* key, Transaction* txn = nullptr) {
+    bool idxRemove(void* testState, Index idx, const FlashStr* key, Transaction* txn = nullptr) {
       char* ramKey = strdup(key);
       bool result = _idxManager->idxRemove(testState, idx, ramKey, txn);
       free(ramKey);
@@ -134,7 +135,7 @@ class SDStorage {
     bool idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
       return _idxManager->idxRename(testState, idx, oldKey, newKey, txn);
     };
-    bool idxRename(Index idx, const __FlashStringHelper* oldKey, const __FlashStringHelper* newKey, Transaction* txn = nullptr) {
+    bool idxRename(Index idx, const FlashStr* oldKey, const FlashStr* newKey, Transaction* txn = nullptr) {
       char* ramOldKey = strdup(oldKey);
       char* ramNewKey = strdup(newKey);
       bool result = _idxManager->idxRename(idx, ramOldKey, ramNewKey, txn);
@@ -142,7 +143,7 @@ class SDStorage {
       free(ramNewKey);
       return result;
     };
-    bool idxRename(void* testState, Index idx, const __FlashStringHelper* oldKey, const __FlashStringHelper* newKey, Transaction* txn = nullptr) {
+    bool idxRename(void* testState, Index idx, const FlashStr* oldKey, const FlashStr* newKey, Transaction* txn = nullptr) {
       char* ramOldKey = strdup(oldKey);
       char* ramNewKey = strdup(newKey);
       bool result = _idxManager->idxRename(testState, idx, ramOldKey, ramNewKey, txn);
@@ -153,7 +154,7 @@ class SDStorage {
     bool idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
       return _idxManager->idxLookup(idx, key, buffer, bufferSize, testState);
     };
-    bool idxLookup(Index idx, const __FlashStringHelper* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
+    bool idxLookup(Index idx, const FlashStr* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
       char* ramKey = strdup(key);
       bool result = _idxManager->idxLookup(idx, ramKey, buffer, bufferSize, testState);
       free(ramKey);
@@ -162,7 +163,7 @@ class SDStorage {
     bool idxHasKey(Index idx, const char* key, void* testState = nullptr) {
       return _idxManager->idxHasKey(idx, key, testState);
     };
-    bool idxHasKey(Index idx, const __FlashStringHelper* key, void* testState = nullptr) {
+    bool idxHasKey(Index idx, const FlashStr* key, void* testState = nullptr) {
       char* ramKey = strdup(key);
       bool result = _idxManager->idxHasKey(idx, ramKey, testState);
       free(ramKey);
@@ -190,7 +191,7 @@ class SDStorage {
       return _txnManager->beginTxn(filename, moreFilenames...);
     };
     template <typename... Args>
-    Transaction* beginTxn(const __FlashStringHelper* filename, Args... moreFilenames) {
+    Transaction* beginTxn(const FlashStr* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(filename, moreFilenames...);
     };
     template <typename... Args>
@@ -202,7 +203,7 @@ class SDStorage {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
     };
     template <typename... Args>
-    Transaction* beginTxn(void* testState, const __FlashStringHelper* filename, Args... moreFilenames) {
+    Transaction* beginTxn(void* testState, const FlashStr* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
     };
     template <typename... Args>

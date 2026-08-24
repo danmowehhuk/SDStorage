@@ -1,4 +1,4 @@
-#include <Arduino.h>
+#include "../hal/FlashStr.h"
 #include "Strings.h"
 
 namespace SDStorageStrings {
@@ -16,7 +16,7 @@ namespace SDStorageStrings {
     return ramStr;
   }
 
-  char* strdup(const __FlashStringHelper* progmemStr) {
+  char* strdup(const FlashStr* progmemStr) {
     return strdup_P(reinterpret_cast<const char*>(progmemStr));
   }
 
@@ -34,7 +34,7 @@ namespace SDStorageStrings {
     return strstr(str, needle) != nullptr;
   }
 
-  bool contains(const char* str, const __FlashStringHelper* needle) {
+  bool contains(const char* str, const FlashStr* needle) {
     if (!str || !needle) return false;
     char* needleRAM = strdup(needle);
     bool result = contains(str, needleRAM);
@@ -58,7 +58,7 @@ namespace SDStorageStrings {
     return strcmp(str + (strLen - suffixLen), suffix) == 0;
   }
 
-  bool endsWith(const char* str, const __FlashStringHelper* suffix) {
+  bool endsWith(const char* str, const FlashStr* suffix) {
     if (!str || !suffix) return false;
     char* suffixRAM = strdup(suffix);
     bool result = endsWith(str, suffixRAM);
@@ -70,7 +70,7 @@ namespace SDStorageStrings {
     return (!str || str[0] == '\0');
   };
 
-  bool isEmpty(const __FlashStringHelper* str) {
+  bool isEmpty(const FlashStr* str) {
     return isEmpty_P(reinterpret_cast<const char*>(str));
   };
 

@@ -1,4 +1,5 @@
 #include "Transaction.h"
+#include "../hal/SDStorageHal.h"
 
 static uint16_t Transaction::_idSeq = 0;
 
@@ -52,8 +53,8 @@ void Transaction::add(const char* filename) {
     // wait until the key is removed (lock released)
 #if defined(DEBUG)
     if (!didLog) {
-      Serial.print(F("Lock contention on "));
-      Serial.println(filename);
+      SDStorageHal::print(F("Lock contention on "));
+      SDStorageHal::println(filename);
       didLog = true;
     }
 #endif

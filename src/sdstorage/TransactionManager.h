@@ -3,6 +3,7 @@
 
 
 #include "../Index.h"
+#include "../hal/SDStorageHal.h"
 #include "FileHelper.h"
 #include "StorageProvider.h"
 #include "Strings.h"
@@ -37,13 +38,13 @@ class TransactionManager {
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames);
     template <typename... Args>
-    Transaction* beginTxn(const __FlashStringHelper* filename, Args... moreFilenames);
+    Transaction* beginTxn(const FlashStr* filename, Args... moreFilenames);
     template <typename... Args>
     Transaction* beginTxn(sdstorage::Index idx, Args... moreFilenames);
     template <typename... Args>
     Transaction* beginTxn(void* testState, const char* filename, Args... moreFilenames);
     template <typename... Args>
-    Transaction* beginTxn(void* testState, const __FlashStringHelper* filename, Args... moreFilenames);
+    Transaction* beginTxn(void* testState, const FlashStr* filename, Args... moreFilenames);
     template <typename... Args>
     Transaction* beginTxn(void* testState, sdstorage::Index idx, Args... moreFilenames);
 
@@ -63,7 +64,7 @@ class TransactionManager {
     template <typename... Args>
     bool _beginTxn(Transaction* txn, void* testState, const char* filename, Args... moreFilenames);
     template <typename... Args>
-    bool _beginTxn(Transaction* txn, void* testState, const __FlashStringHelper* filename, Args... moreFilenames);
+    bool _beginTxn(Transaction* txn, void* testState, const FlashStr* filename, Args... moreFilenames);
     template <typename... Args>
     bool _beginTxn(Transaction* txn, void* testState, sdstorage::Index idx, Args... moreFilenames);
     bool _beginTxn(Transaction* txn, void* testState) { return true; }; // termination case
@@ -99,7 +100,7 @@ Transaction* TransactionManager::beginTxn(const char* filename, Args... moreFile
 }
 
 template <typename... Args>
-Transaction* TransactionManager::beginTxn(const __FlashStringHelper* filename, Args... moreFilenames) {
+Transaction* TransactionManager::beginTxn(const FlashStr* filename, Args... moreFilenames) {
   return beginTxn((void*)1, filename, moreFilenames...);
 }
 
@@ -127,7 +128,7 @@ Transaction* TransactionManager::beginTxn(void* testState, const char* filename,
 }
 
 template <typename... Args>
-Transaction* TransactionManager::beginTxn(void* testState, const __FlashStringHelper* filename, Args... moreFilenames) {
+Transaction* TransactionManager::beginTxn(void* testState, const FlashStr* filename, Args... moreFilenames) {
   char* filenameRAM = strdup(filename);
   Transaction* txn = beginTxn(testState, filenameRAM, moreFilenames...);
   free(filenameRAM);
@@ -149,7 +150,7 @@ bool TransactionManager::_beginTxn(Transaction* txn, void* testState, const char
 }
 
 template <typename... Args>
-bool TransactionManager::_beginTxn(Transaction* txn, void* testState, const __FlashStringHelper* filename, Args... moreFilenames) {
+bool TransactionManager::_beginTxn(Transaction* txn, void* testState, const FlashStr* filename, Args... moreFilenames) {
   char* filenameRAM = strdup(filename);
   bool result = _beginTxn(txn, testState, filenameRAM, moreFilenames...);
   free(filenameRAM);
@@ -160,7 +161,7 @@ template <typename... Args>
 bool TransactionManager::_beginTxn(Transaction* txn, void* testState, sdstorage::Index idx, Args... moreFilenames) {
   if (!idx.name) {
 #if (defined(DEBUG))
-    Serial.println(F("TransactionManager::beginTxn - index name cannot be empty"));
+    SDStorageHal::println(F("TransactionManager::beginTxn - index name cannot be empty"));
 #endif
     return false;
   }

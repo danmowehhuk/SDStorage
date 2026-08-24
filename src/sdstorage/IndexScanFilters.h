@@ -3,6 +3,7 @@
 
 
 #include "../Index.h"
+#include "../hal/SDStorageHal.h"
 #include "IndexHelpers.h"
 #include <StreamableManager.h>
 #include "Strings.h"
@@ -59,7 +60,7 @@ class IndexScanFilters {
 
       if (isEmpty(currEntry.key)) {
 #if (defined(DEBUG))
-        Serial.println(F("idxUpsert aborting - possible index corruption"));
+        SDStorageHal::println(F("idxUpsert aborting - possible index corruption"));
 #endif
         state->didUpsert = false; // signal txn rollback
         return false; // stop piping index lines

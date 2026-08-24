@@ -3,7 +3,7 @@
 
 
 #include "../Index.h"
-#include <Arduino.h>
+#include "../hal/FlashStr.h"
 
 static const char _SDSTORAGE_WORK_DIR[]          PROGMEM = "~WORK";
 static const char _SDSTORAGE_IDX_DIR[]           PROGMEM = "~IDX";
@@ -39,7 +39,7 @@ class FileHelper {
 
         explicit Filename(const char* n, bool isPmem = false): 
             name(n), isPmem(isPmem) {};
-        explicit Filename(const __FlashStringHelper* n):
+        explicit Filename(const FlashStr* n):
             name(reinterpret_cast<const char*>(n)), isPmem(true) {};
 
         static Filename fromProgmem(const char* n) {
