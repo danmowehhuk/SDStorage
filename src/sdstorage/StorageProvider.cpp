@@ -136,8 +136,16 @@ bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
   dest = _sd.writeIndexFileStream(indexFilename, testState);
   if (!dest) return false;
 #elif defined(NO_ARDUINO)
+  // FA_OPEN_APPEND (open-existing-or-create, seek to end) matches
+  // SdFat's own FILE_WRITE (O_RDWR|O_CREAT|O_AT_END) - not
+  // FA_CREATE_ALWAYS, which truncates. This call site can run against
+  // a tmpFilename that idxUpsert() already piped existing index lines
+  // into (via _updateIndex) before appending a new key - truncating
+  // here would silently discard that content. Confirmed as a real bug
+  // on real hardware: a second idxUpsert() call was wiping the first
+  // upserted key.
   File file;
-  if (!file.open(indexFilename, FA_CREATE_ALWAYS | FA_WRITE)) return false;
+  if (!file.open(indexFilename, FA_OPEN_APPEND | FA_WRITE)) return false;
   dest = &file;
 #else
   File file = _sd.open(indexFilename, FILE_WRITE);
