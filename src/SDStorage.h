@@ -203,6 +203,10 @@ class SDStorage {
       return _txnManager->beginTxn(idx, moreFilenames...);
     };
     template <typename... Args>
+    Transaction* beginTxn(Sequence seq, Args... moreFilenames) {
+      return _txnManager->beginTxn(seq, moreFilenames...);
+    };
+    template <typename... Args>
     Transaction* beginTxn(void* testState, const char* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
     };
@@ -213,6 +217,10 @@ class SDStorage {
     template <typename... Args>
     Transaction* beginTxn(void* testState, Index idx, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, idx, moreFilenames...);
+    };
+    template <typename... Args>
+    Transaction* beginTxn(void* testState, Sequence seq, Args... moreFilenames) {
+      return _txnManager->beginTxn(testState, seq, moreFilenames...);
     };
 
     /*

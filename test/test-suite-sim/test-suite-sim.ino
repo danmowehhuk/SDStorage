@@ -466,6 +466,48 @@ void testSeqNext_stringify_overflowFails(TestInvocation* t) {
   t->verify(!helper.seqNextStrRaw(sdStorage, &ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
 }
 
+void testBeginTxn_withSequence(TestInvocation* t) {
+  t->setName(F("beginTxn() accepts a Sequence"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true;
+
+  Transaction* txn = sdStorage->beginTxn(&ts, Sequence(F("mySeq")));
+  t->verify(txn, F("beginTxn failed"));
+  if (txn) delete txn;
+}
+
+void testSeqNext_withExplicitTxn(TestInvocation* t) {
+  t->setName(F("Sequence next() - explicit transaction, not auto-committed"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true;
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // With an explicit txn, next() skips its own beginTxn/addFileToTxn call, so the
+  // only remaining exists() call is current()'s single check (index 3, after the
+  // 3 already consumed above by beginTxn); it defaults to false (mySeq.seq still
+  // not found), which is exactly what's needed here.
+
+  // SDStorage::seqNext isn't public until Task 7 - call SequenceManager
+  // directly through the test-only passthrough added in Task 4.
+  uint64_t result = helper.seqNextRaw(sdStorage, &ts, mySeq, txn);
+  t->verify(result == 1, F("Expected 1"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+}
+
 void testToIndexLine(TestInvocation* t) {
   t->setName(F("Convert IndexEntry to chars"));
   char line[64];
@@ -852,6 +894,8 @@ void setup() {
     testSeqCurrent_stringify,
     testSeqNext_stringify,
     testSeqNext_stringify_overflowFails,
+    testBeginTxn_withSequence,
+    testSeqNext_withExplicitTxn,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,
