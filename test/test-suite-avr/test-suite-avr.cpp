@@ -161,6 +161,110 @@ void testFsckRecoversStaleTransaction(TestInvocation* t) {
   }
 }
 
+void testTransaction_repeatFileEdit(TestInvocation* t) {
+  t->setName(F("Edit the same file twice in one transaction, interleaved with another file"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  sdStorage.erase(F("file2.dat"));
+  sdStorage.erase(F("file3.dat"));
+
+  Transaction* txn = sdStorage.beginTxn(F("file2.dat"), F("file3.dat"));
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoA1;
+  dtoA1.put(F("step"), F("1"));
+  t->verify(sdStorage.save(F("file2.dat"), &dtoA1, txn), F("first save of file2 failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoB;
+  dtoB.put(F("b"), F("1"));
+  t->verify(sdStorage.save(F("file3.dat"), &dtoB, txn), F("save of file3 failed"));
+  if (!t->passed()) return;
+
+  // Reload file2 through the still-open transaction - this must see the
+  // first save's content, not the pristine original.
+  StreamableDTO dtoA2;
+  t->verify(sdStorage.load(F("file2.dat"), &dtoA2, nullptr, txn), F("reload of file2 within the transaction failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(dtoA2.get(F("step")), F("1"), F("reload within the transaction lost the first edit"));
+  dtoA2.put(F("step"), F("2"));
+  t->verify(sdStorage.save(F("file2.dat"), &dtoA2, txn), F("second save of file2 failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO finalA;
+  t->verify(sdStorage.load(F("file2.dat"), &finalA), F("final load of file2 failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(finalA.get(F("step")), F("2"), F("committed file2 does not reflect both edits"));
+  StreamableDTO finalB;
+  t->verify(sdStorage.load(F("file3.dat"), &finalB), F("final load of file3 failed"));
+  t->verifyEqual(finalB.get(F("b")), F("1"), F("committed file3 is incorrect"));
+
+  // cleanup
+  sdStorage.erase(F("file2.dat"));
+  sdStorage.erase(F("file3.dat"));
+}
+
+void testTransaction_repeatFileAndIndexEdits(TestInvocation* t) {
+  t->setName(F("Repeated file and index edits, interleaved, in one transaction"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~IDX/idx2.idx");
+  sdStorage.erase(F("file4.dat"));
+  sdStorage.erase(F("file5.dat"));
+
+  Index myIdx(F("idx2"));
+  Transaction* txn = sdStorage.beginTxn(myIdx, F("file4.dat"), F("file5.dat"));
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoA;
+  dtoA.put(F("n"), F("1"));
+  t->verify(sdStorage.save(F("file4.dat"), &dtoA, txn), F("save of file4 (edit 1) failed"));
+  if (!t->passed()) return;
+  IndexEntry entryA(F("file4"), F("1"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA, txn), F("first index upsert failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoB;
+  dtoB.put(F("n"), F("1"));
+  t->verify(sdStorage.save(F("file5.dat"), &dtoB, txn), F("save of file5 failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoA2;
+  t->verify(sdStorage.load(F("file4.dat"), &dtoA2, nullptr, txn), F("reload of file4 within the transaction failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(dtoA2.get(F("n")), F("1"), F("reload of file4 within the transaction lost the first edit"));
+  dtoA2.put(F("n"), F("2"));
+  t->verify(sdStorage.save(F("file4.dat"), &dtoA2, txn), F("save of file4 (edit 2) failed"));
+  if (!t->passed()) return;
+  IndexEntry entryA2(F("file4"), F("2"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA2, txn), F("second index upsert (same key) failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO finalA;
+  t->verify(sdStorage.load(F("file4.dat"), &finalA), F("final load of file4 failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(finalA.get(F("n")), F("2"), F("committed file4 does not reflect both edits"));
+  StreamableDTO finalB;
+  t->verify(sdStorage.load(F("file5.dat"), &finalB), F("final load of file5 failed"));
+  t->verifyEqual(finalB.get(F("n")), F("1"), F("committed file5 is incorrect"));
+  char buf[10];
+  t->verify(sdStorage.idxLookup(myIdx, "file4", buf, 10), F("index lookup failed"));
+  t->verifyEqual(buf, F("2"), F("index does not reflect the second upsert"));
+
+  // cleanup
+  f_unlink("/TESTROOT/~IDX/idx2.idx");
+  sdStorage.erase(F("file4.dat"));
+  sdStorage.erase(F("file5.dat"));
+}
+
 int main() {
   Uart0::begin(9600);
   timingInit();
@@ -181,7 +285,9 @@ int main() {
     testMkdir,
     testSaveLoadErase,
     testIndexUpsertLookupRemove,
-    testFsckRecoversStaleTransaction
+    testFsckRecoversStaleTransaction,
+    testTransaction_repeatFileEdit,
+    testTransaction_repeatFileAndIndexEdits
   };
 
   runTestSuiteShowMem(tests, before);
