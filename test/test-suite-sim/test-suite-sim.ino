@@ -92,6 +92,28 @@ void testIsValidFAT16Filename(TestInvocation* t) {
   t->verify(helper.isValidFAT16Filename(sdStorage, F("foo")), F("No filename extension should be valid"));
 }
 
+void testUint64ToString(TestInvocation* t) {
+  t->setName(F("uint64_t to decimal string"));
+  char buf[21]; // max uint64_t digits (20) + null terminator
+  t->verify(uint64ToString(0, buf, sizeof(buf)), F("Failed on 0"));
+  t->verifyEqual(buf, F("0"));
+  t->verify(uint64ToString(12345, buf, sizeof(buf)), F("Failed on 12345"));
+  t->verifyEqual(buf, F("12345"));
+  t->verify(uint64ToString(18446744073709551615ULL, buf, sizeof(buf)), F("Failed on UINT64_MAX"));
+  t->verifyEqual(buf, F("18446744073709551615"));
+  t->verify(!uint64ToString(12345, buf, 3), F("Should have failed - buffer too small"));
+  t->verify(!uint64ToString(0, nullptr, sizeof(buf)), F("Should have failed - null output"));
+}
+
+void testStringToUint64(TestInvocation* t) {
+  t->setName(F("decimal string to uint64_t"));
+  t->verify(stringToUint64("0") == 0, F("Failed on \"0\""));
+  t->verify(stringToUint64("12345") == 12345, F("Failed on \"12345\""));
+  t->verify(stringToUint64("18446744073709551615") == 18446744073709551615ULL, F("Failed on max value"));
+  t->verify(stringToUint64("123abc") == 123, F("Should stop at first non-digit"));
+  t->verify(stringToUint64(nullptr) == 0, F("Should return 0 for nullptr"));
+}
+
 void testGetPathFromFilename(TestInvocation* t) {
   t->setName(F("Extract path from filename"));
   char path[64];
@@ -690,6 +712,8 @@ void setup() {
     testMakeDir,
     testFileExists,
     testIsValidFAT16Filename,
+    testUint64ToString,
+    testStringToUint64,
     testGetPathFromFilename,
     testGetFilenameFromFullName,
     testCreateTransaction_happyPath,
