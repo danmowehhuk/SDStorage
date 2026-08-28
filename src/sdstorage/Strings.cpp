@@ -78,4 +78,50 @@ namespace SDStorageStrings {
     return (!str || strlen_P(str) == 0);
   };
 
+  bool uint64ToString(uint64_t value, char* output, size_t bufferSize) {
+    if (!output || bufferSize < 2) return false;
+
+    if (value == 0) {
+      output[0] = '0';
+      output[1] = '\0';
+      return true;
+    }
+
+    // Count digits first so a too-small buffer is caught before writing
+    uint64_t counter = value;
+    int digits = 0;
+    while (counter > 0) {
+      digits++;
+      counter /= 10;
+    }
+    if (bufferSize < (size_t)(digits + 1)) return false;
+
+    char temp[20]; // max digits for uint64_t (no null terminator needed here)
+    int index = 0;
+    counter = value;
+    while (counter > 0) {
+      temp[index++] = '0' + (counter % 10);
+      counter /= 10;
+    }
+    for (int i = 0; i < index; i++) {
+      output[i] = temp[index - 1 - i];
+    }
+    output[index] = '\0';
+    return true;
+  }
+
+  uint64_t stringToUint64(const char* input) {
+    if (!input) return 0;
+    uint64_t result = 0;
+    while (*input) {
+      if (*input >= '0' && *input <= '9') {
+        result = result * 10 + (*input - '0');
+      } else {
+        break;
+      }
+      input++;
+    }
+    return result;
+  }
+
 }

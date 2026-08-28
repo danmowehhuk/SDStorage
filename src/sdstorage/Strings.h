@@ -2,6 +2,7 @@
 #define _SDStorage_Strings_h
 
 #include "../hal/FlashStr.h"
+#include <stdint.h>
 
 namespace SDStorageStrings {
 
@@ -16,6 +17,23 @@ namespace SDStorageStrings {
   bool isEmpty(const char* str);
   bool isEmpty(const FlashStr* str);
   bool isEmpty_P(const char* str);
+
+  /*
+   * Converts a uint64_t to a decimal string representation.
+   *
+   * @param value The 64-bit number to convert
+   * @param output Buffer of at least 21 bytes (20 digits + null terminator)
+   * @param bufferSize Size of the output buffer
+   * @return true if conversion succeeded, false if output is null or
+   *         bufferSize is too small for the value
+   */
+  bool uint64ToString(uint64_t value, char* output, size_t bufferSize);
+
+  /*
+   * Converts a decimal string to a uint64_t. Stops parsing at the first
+   * non-digit character. Returns 0 for a null or invalid input.
+   */
+  uint64_t stringToUint64(const char* input);
 
 }
 

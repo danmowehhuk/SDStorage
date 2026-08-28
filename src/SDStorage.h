@@ -14,11 +14,13 @@
 
 
 #include "Index.h"
+#include "Sequence.h"
 #include "hal/FlashStr.h"
 #include <StreamableDTO.h>
 #include <StreamableManager.h>
 #include "sdstorage/FileHelper.h"
 #include "sdstorage/IndexManager.h"
+#include "sdstorage/SequenceManager.h"
 #include "sdstorage/Transaction.h"
 #include "sdstorage/TransactionManager.h"
 #include "sdstorage/StorageProvider.h"
@@ -48,10 +50,11 @@ class SDStorage {
      * a cleanup of the work directory, applying any finalized transactions
      * and rolling back any others.
      */
-    SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr): 
+    SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr):
           _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin), _errFunction(errFunction) {
         _txnManager = new TransactionManager(&_fileHelper, &_storageProvider, _errFunction);
         _idxManager = new IndexManager(&_fileHelper, &_storageProvider, _txnManager);
+        _seqManager = new SequenceManager(&_fileHelper, &_storageProvider, _txnManager, _errFunction);
     };
     SDStorage(uint8_t sdCsPin, const char* rootDir, void (*errFunction)() = nullptr): 
           SDStorage(sdCsPin, rootDir, false, errFunction) {};
@@ -61,6 +64,7 @@ class SDStorage {
     ~SDStorage() {
       if (_txnManager) delete _txnManager;
       if (_idxManager) delete _idxManager;
+      if (_seqManager) delete _seqManager;
     }
 
     // Disable moving and copying
@@ -175,16 +179,61 @@ class SDStorage {
 
 
     /*
+     * SEQUENCE OPERATIONS
+     *
+     * A sequence must be advanced with seqNext() (or explicitly given a
+     * starting point with seqInit()) at least once before seqCurrent() is
+     * called on it - reading a sequence that has never been touched is a
+     * usage error and invokes errFunction, the same as any other
+     * unrecoverable SDStorage error. seqNext() itself has no such
+     * requirement: calling it on a brand-new sequence is exactly how a
+     * sequence gets created, and its first call always returns 1.
+     */
+    uint64_t seqCurrent(Sequence seq, void* testState = nullptr) {
+      return _seqManager->current(seq, testState);
+    };
+    uint64_t seqNext(Sequence seq, Transaction* txn = nullptr) {
+      return seqNext(nullptr, seq, txn);
+    };
+    uint64_t seqNext(void* testState, Sequence seq, Transaction* txn = nullptr) {
+      return _seqManager->next(testState, seq, txn);
+    };
+    bool seqCurrent(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
+      return _seqManager->current(seq, out, f, testState);
+    };
+    bool seqNext(Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+      return seqNext(nullptr, seq, out, f, txn);
+    };
+    bool seqNext(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+      return _seqManager->next(testState, seq, out, f, txn);
+    };
+    /*
+     * Explicitly sets a sequence's starting value. Use this if a sequence
+     * needs to start somewhere other than 1 (e.g. importing existing data).
+     * initialValue must be >= 1 - 0 is reserved to mean "never initialized"
+     * throughout this API. If a sequence is never explicitly initialized,
+     * its first seqNext() call still bootstraps it to 1 automatically;
+     * seqInit() is only needed to pick a different starting point.
+     */
+    bool seqInit(Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+      return seqInit(nullptr, seq, initialValue, txn);
+    };
+    bool seqInit(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+      return _seqManager->init(testState, seq, initialValue, txn);
+    };
+
+
+    /*
      * TRANSACTION OPERATIONS
      *
      * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
-     * or a mixture of both. Indexes may also be provided. All will be converted to absolute canonical
-     * filenames, the root directory prepended if necessary.
+     * or a mixture of both. Indexes and Sequences may also be provided. All will be converted to
+     * absolute canonical filenames, the root directory prepended if necessary.
      *
-     * NOTE: If a file or index is added to a transaction, then the Transaction* MUST be passed
-     *       to any write operation involving that file or index. Otherwise, SDStorage will try
-     *       to create an implicit transaction and hang because the other transaction is already
-     *       holding a lock on the file or index.
+     * NOTE: If a file, index, or sequence is added to a transaction, then the Transaction* MUST be
+     *       passed to any write operation involving that file, index, or sequence. Otherwise,
+     *       SDStorage will try to create an implicit transaction and hang because the other
+     *       transaction is already holding a lock on the file, index, or sequence.
      */
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames) {
@@ -199,6 +248,10 @@ class SDStorage {
       return _txnManager->beginTxn(idx, moreFilenames...);
     };
     template <typename... Args>
+    Transaction* beginTxn(Sequence seq, Args... moreFilenames) {
+      return _txnManager->beginTxn(seq, moreFilenames...);
+    };
+    template <typename... Args>
     Transaction* beginTxn(void* testState, const char* filename, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, filename, moreFilenames...);
     };
@@ -209,6 +262,10 @@ class SDStorage {
     template <typename... Args>
     Transaction* beginTxn(void* testState, Index idx, Args... moreFilenames) {
       return _txnManager->beginTxn(testState, idx, moreFilenames...);
+    };
+    template <typename... Args>
+    Transaction* beginTxn(void* testState, Sequence seq, Args... moreFilenames) {
+      return _txnManager->beginTxn(testState, seq, moreFilenames...);
     };
 
     /*
@@ -234,6 +291,7 @@ class SDStorage {
     StorageProvider _storageProvider;
     TransactionManager* _txnManager = nullptr;
     IndexManager* _idxManager = nullptr;
+    SequenceManager* _seqManager = nullptr;
 
     /*
      * Cleans up the _workDir on initialization in case any transactions were

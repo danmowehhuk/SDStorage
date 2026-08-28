@@ -3,6 +3,7 @@
 
 
 #include <Arduino.h>
+#include <Sequence.h>
 #include <sdstorage/FileHelper.h>
 #include <sdstorage/IndexHelpers.h>
 #include <sdstorage/Strings.h>
@@ -44,6 +45,12 @@ class SDStorageTestHelper {
     };
     bool getIndexFilename(SDStorage* sdStorage, Index idx, char* buffer, size_t bufferSize) {
       return sdStorage->_fileHelper.indexFilename(idx, buffer, bufferSize);
+    };
+    char* getSeqDir(SDStorage* sdStorage) {
+      return sdStorage->_fileHelper.getSeqDir();
+    };
+    bool getSequenceFilename(SDStorage* sdStorage, sdstorage::Sequence seq, char* buffer, size_t bufferSize) {
+      return sdStorage->_fileHelper.sequenceFilename(seq, buffer, bufferSize);
     };
     FileHelper::Filename toFilename(const __FlashStringHelper* filename) {
       return FileHelper::Filename(filename);

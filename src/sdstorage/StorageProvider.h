@@ -78,6 +78,7 @@ class StorageProvider {
     friend class SDStorageTestHelper;
     friend class TransactionManager;
     friend class IndexManager;
+    friend class SequenceManager;
 
 };
 

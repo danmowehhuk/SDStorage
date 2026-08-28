@@ -24,6 +24,7 @@ void before() {
     ts.onExistsReturn[0] = false; // root exists?
     ts.onExistsReturn[1] = false; // workdir exists?
     ts.onExistsReturn[2] = false; // idx dir exists?
+    ts.onExistsReturn[3] = false; // seq dir exists?
     beginSuccess = sdStorage->begin(&ts);
   }
 }
@@ -34,6 +35,7 @@ void testBegin(TestInvocation* t) {
   t->verifyEqual(helper.getRootDir(sdStorage), F("/TESTROOT"));
   t->verifyEqual(helper.getWorkDir(sdStorage), F("/TESTROOT/~WORK"));
   t->verifyEqual(helper.getIdxDir(sdStorage), F("/TESTROOT/~IDX"));
+  t->verifyEqual(helper.getSeqDir(sdStorage), F("/TESTROOT/~SEQ"));
 }
 
 void testConstructor(TestInvocation* t) {
@@ -90,6 +92,28 @@ void testIsValidFAT16Filename(TestInvocation* t) {
   t->verify(!helper.isValidFAT16Filename(sdStorage, F("f£o.txt")), F("Invalid filename character"));
   t->verify(helper.isValidFAT16Filename(sdStorage, F("foo.txt")), F("Should have been valid filename"));
   t->verify(helper.isValidFAT16Filename(sdStorage, F("foo")), F("No filename extension should be valid"));
+}
+
+void testUint64ToString(TestInvocation* t) {
+  t->setName(F("uint64_t to decimal string"));
+  char buf[21]; // max uint64_t digits (20) + null terminator
+  t->verify(uint64ToString(0, buf, sizeof(buf)), F("Failed on 0"));
+  t->verifyEqual(buf, F("0"));
+  t->verify(uint64ToString(12345, buf, sizeof(buf)), F("Failed on 12345"));
+  t->verifyEqual(buf, F("12345"));
+  t->verify(uint64ToString(18446744073709551615ULL, buf, sizeof(buf)), F("Failed on UINT64_MAX"));
+  t->verifyEqual(buf, F("18446744073709551615"));
+  t->verify(!uint64ToString(12345, buf, 3), F("Should have failed - buffer too small"));
+  t->verify(!uint64ToString(0, nullptr, sizeof(buf)), F("Should have failed - null output"));
+}
+
+void testStringToUint64(TestInvocation* t) {
+  t->setName(F("decimal string to uint64_t"));
+  t->verify(stringToUint64("0") == 0, F("Failed on \"0\""));
+  t->verify(stringToUint64("12345") == 12345, F("Failed on \"12345\""));
+  t->verify(stringToUint64("18446744073709551615") == 18446744073709551615ULL, F("Failed on max value"));
+  t->verify(stringToUint64("123abc") == 123, F("Should stop at first non-digit"));
+  t->verify(stringToUint64(nullptr) == 0, F("Should return 0 for nullptr"));
 }
 
 void testGetPathFromFilename(TestInvocation* t) {
@@ -326,9 +350,277 @@ void testSaveFile_noTxn(TestInvocation* t) {
 void testIdxFilename(TestInvocation* t) {
   t->setName(F("Index filename"));
   char idxFilename[64];
-  t->verify(helper.getIndexFilename(sdStorage, Index(F("foo")), idxFilename, 64), 
+  t->verify(helper.getIndexFilename(sdStorage, Index(F("foo")), idxFilename, 64),
         F("getIndexFilename returned false"));
   t->verifyEqual(idxFilename, F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
+}
+
+void testSequenceFilename(TestInvocation* t) {
+  t->setName(F("Sequence filename"));
+  char seqFilename[64];
+  t->verify(helper.getSequenceFilename(sdStorage, sdstorage::Sequence(F("foo")), seqFilename, 64),
+        F("getSequenceFilename returned false"));
+  t->verifyEqual(seqFilename, F("/TESTROOT/~SEQ/foo.seq"));
+}
+
+void testSeqCurrent_notYetCreated_callsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence current() - reading before next()/init() calls errFunction"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
+
+  errThrown = false;
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 - reading an uninitialized sequence is an error"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+}
+
+void testSeqCurrent_existingValue(TestInvocation* t) {
+  t->setName(F("Sequence current() - existing value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists
+  ts.onLoadData = strdup(F("v=42\n"));
+
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
+}
+
+void testSeqInit_happyPath(TestInvocation* t) {
+  t->setName(F("Sequence init() - sets an explicit starting value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  t->verify(sdStorage->seqInit(&ts, Sequence(F("mySeq")), 1000), F("seqInit failed"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1000\n"), F("Unexpected data written"));
+}
+
+void testSeqInit_rejectsZero(TestInvocation* t) {
+  t->setName(F("Sequence init() - rejects an initial value of 0"));
+  MockSdFat::TestState ts;
+
+  errThrown = false;
+  t->verify(!sdStorage->seqInit(&ts, Sequence(F("mySeq")), 0), F("seqInit should have failed for initialValue=0"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
+void testSeqNext_firstValueNoTxn(TestInvocation* t) {
+  t->setName(F("Sequence next() - first value, implicit txn"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (current() load)
+  ts.onExistsReturn[1] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn)
+  ts.onExistsReturn[2] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true; // /TESTROOT/~SEQ is a directory
+  ts.onExistsReturn[3] = false; // mySeq's tmp file doesn't exist yet
+  ts.onRenameReturn = true; // commit txn
+  ts.onRemoveReturn = true; // transaction cleanup
+
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
+  t->verify(result == 1, F("Expected 1 for a brand-new sequence's first next()"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
+  t->verify(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
+}
+
+void testSeqNext_incrementsExistingValue(TestInvocation* t) {
+  t->setName(F("Sequence next() - increments an existing value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("v=41\n"));
+  ts.onExistsReturn[1] = true; // mySeq.seq exists (beginTxn's addFileToTxn)
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
+  t->verify(result == 42, F("Expected 42"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=42\n"), F("Unexpected data written"));
+}
+
+void testSeqNext_overflowCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - overflow calls errFunction, does not write"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("v=18446744073709551615\n")); // UINT64_MAX
+
+  errThrown = false;
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
+  t->verify(result == 0, F("Expected 0 on overflow"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
+bool toDecimalString(uint64_t value, char* out) {
+  return uint64ToString(value, out, 21); // 20 digits + null terminator
+}
+
+void testSeqNext_corruptZeroValueCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - existing file with unparseable/zero value calls errFunction, does not reset"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("garbage\n")); // no "v=" key parses to value 0
+  ts.onExistsReturn[1] = true; // mySeq.seq still exists (next()'s curr==0 anomaly check)
+
+  errThrown = false;
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
+  t->verify(result == 0, F("Expected 0 on corrupt/unparseable existing file"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
+void testSeqCurrent_stringify(TestInvocation* t) {
+  t->setName(F("Sequence current() - stringify overload"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=42\n"));
+
+  char out[21];
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), out, toDecimalString, &ts), F("seqCurrent stringify failed"));
+  t->verifyEqual(out, F("42"));
+}
+
+void testSeqNext_stringify(TestInvocation* t) {
+  t->setName(F("Sequence next() - stringify overload"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false;
+  ts.onExistsReturn[1] = false;
+  ts.onExistsReturn[2] = true;
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[3] = false;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  char out[21];
+  t->verify(sdStorage->seqNext(&ts, Sequence(F("mySeq")), out, toDecimalString), F("seqNext stringify failed"));
+  t->verifyEqual(out, F("1"));
+}
+
+void testSeqNext_stringify_overflowFails(TestInvocation* t) {
+  t->setName(F("Sequence next() - stringify overload returns false on overflow"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=18446744073709551615\n"));
+
+  char out[21];
+  t->verify(!sdStorage->seqNext(&ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
+}
+
+void testBeginTxn_withSequence(TestInvocation* t) {
+  t->setName(F("beginTxn() accepts a Sequence"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true;
+
+  Transaction* txn = sdStorage->beginTxn(&ts, Sequence(F("mySeq")));
+  t->verify(txn, F("beginTxn failed"));
+  if (txn) delete txn;
+}
+
+void testSeqNext_withExplicitTxn(TestInvocation* t) {
+  t->setName(F("Sequence next() - explicit transaction, not auto-committed"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true;
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // With an explicit txn, next() skips its own beginTxn/addFileToTxn call, so the
+  // only remaining exists() call is current()'s single check (index 3, after the
+  // 3 already consumed above by beginTxn); it defaults to false (mySeq.seq still
+  // not found), which is exactly what's needed here.
+
+  uint64_t result = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(result == 1, F("Expected 1"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+}
+
+void testSeqNext_withExplicitTxn_calledTwice(TestInvocation* t) {
+  t->setName(F("Sequence next() - two calls on the same explicit txn return different values"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // First next() call: no pending tmp value written yet, so it falls back to
+  // current(): index 3 = the pending-tmp-file exists check (false, nothing
+  // written yet), index 4 = current()'s own exists check on mySeq.seq (false),
+  // index 5 = the curr==0 anomaly check's exists on mySeq.seq (false, the
+  // file genuinely doesn't exist yet).
+  ts.onExistsReturn[3] = false;
+  ts.onExistsReturn[4] = false;
+  ts.onExistsReturn[5] = false;
+  uint64_t first = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(first == 1, F("Expected 1 on first call"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written on first call"));
+
+  // Second next() call: the pending tmp file now exists, holding the value
+  // written by the first call - next() must read that instead of the
+  // (still-uncommitted) committed file, or it would silently return 1 again.
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onLoadData = strdup(ts.writeDataCaptor.get()); // "v=1\n" - what the first call wrote
+  ts.writeDataCaptor.reset();
+  uint64_t second = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(second == 2, F("Expected 2 on second call - must not repeat 1"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=2\n"), F("Unexpected data written on second call"));
+
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+}
+
+void testSeqNext_explicitTxn_pendingValueLoadFailureCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - explicit txn pending value load failure calls errFunction, does not reset"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // First call succeeds normally, writing "v=1\n" to the pending tmp file.
+  ts.onExistsReturn[3] = false;
+  ts.onExistsReturn[4] = false;
+  ts.onExistsReturn[5] = false;
+  uint64_t first = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(first == 1, F("Expected 1 on first call"));
+
+  // Second call: the pending tmp file exists, but its content is unparseable
+  // garbage (simulating a corrupted/failed read of the txn's own file) - this
+  // must NOT be treated as "no pending value yet", and must NOT fall through
+  // to writing 1 again.
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onLoadData = strdup(F("garbage\n"));
+  ts.writeDataCaptor.reset();
+
+  errThrown = false;
+  uint64_t second = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(second == 0, F("Expected 0 - must not silently reset to 1"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything on the failed read"));
 }
 
 void testToIndexLine(TestInvocation* t) {
@@ -690,6 +982,8 @@ void setup() {
     testMakeDir,
     testFileExists,
     testIsValidFAT16Filename,
+    testUint64ToString,
+    testStringToUint64,
     testGetPathFromFilename,
     testGetFilenameFromFullName,
     testCreateTransaction_happyPath,
@@ -706,6 +1000,22 @@ void setup() {
     testLoadFile,
     testSaveFile_noTxn,
     testIdxFilename,
+    testSequenceFilename,
+    testSeqCurrent_notYetCreated_callsErrFunction,
+    testSeqCurrent_existingValue,
+    testSeqInit_happyPath,
+    testSeqInit_rejectsZero,
+    testSeqNext_firstValueNoTxn,
+    testSeqNext_incrementsExistingValue,
+    testSeqNext_overflowCallsErrFunction,
+    testSeqNext_corruptZeroValueCallsErrFunction,
+    testSeqCurrent_stringify,
+    testSeqNext_stringify,
+    testSeqNext_stringify_overflowFails,
+    testBeginTxn_withSequence,
+    testSeqNext_withExplicitTxn,
+    testSeqNext_withExplicitTxn_calledTwice,
+    testSeqNext_explicitTxn_pendingValueLoadFailureCallsErrFunction,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,
