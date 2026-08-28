@@ -127,6 +127,22 @@ void testIndexUpsertLookupRemove(TestInvocation* t) {
   f_unlink("/TESTROOT/~IDX/idx1.idx");
 }
 
+void testSeqCurrentNext(TestInvocation* t) {
+  t->setName(F("seqCurrent()/seqNext() round-trip"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~SEQ/seq1.seq");
+
+  // A sequence must be advanced with seqNext() at least once before
+  // seqCurrent() can be called on it - reading it first is a usage error.
+  Sequence mySeq(F("seq1"));
+  t->verify(sdStorage.seqNext(mySeq) == 1, F("Expected 1"));
+  t->verify(sdStorage.seqNext(mySeq) == 2, F("Expected 2"));
+  t->verify(sdStorage.seqCurrent(mySeq) == 2, F("current() after two next() calls should be 2"));
+
+  f_unlink("/TESTROOT/~SEQ/seq1.seq");
+}
+
 void testFsckRecoversStaleTransaction(TestInvocation* t) {
   t->setName(F("begin() (fsck) recovers a stale, never-committed transaction"));
   t->verify(beginSuccess, F("SKIPPED"));
@@ -285,6 +301,7 @@ int main() {
     testMkdir,
     testSaveLoadErase,
     testIndexUpsertLookupRemove,
+    testSeqCurrentNext,
     testFsckRecoversStaleTransaction,
     testTransaction_repeatFileEdit,
     testTransaction_repeatFileAndIndexEdits

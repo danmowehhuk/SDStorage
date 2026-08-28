@@ -9,6 +9,7 @@
 - **[StreamableDTO](https://github.com/danmowehhuk/StreamableDTO) Persistence:** Designed specifically to save and load StreamableDTO objects to SD cards.
 - **Native Indexes:** Create one or more indexes on any string-based key/value data (e.g., a field of your DTO). All index operations run in O(n) time but require only O(1) memory, making them well-suited for low-memory embedded systems.
 - **Prefix Searches:** Indexes support efficient prefix-based lookups. This allows you to retrieve all entries with keys matching a given prefix, which is perfect for building UI features like auto-complete (e.g., ComboBoxes that suggest entries as you type) or implementing trie-based searches.
+- **Sequences:** Named, persistent `uint64_t` counters for generating unique, incrementing IDs (e.g., for filenames or record keys), backed by the SD card so they survive a restart.
 - **Atomic Transactions:** SDStorage supports transactional updates, meaning you can group multiple operations (such as saving a DTO and updating several indexes) into one atomic unit.
 
 ## Installation
@@ -185,16 +186,84 @@ if (sdStorage.idxPrefixSearch(nameIndex, &results)) {
 
 For more details, see the [`search` example](/examples/search/search.ino). That sketch populates an index with sample data and demonstrates two scenarios: one where the prefix is specific enough to get a full list of results, and another where the prefix is broad (many results) triggering the trie mode behavior. The example shows how to handle both cases in your code.
 
+## Using Sequences
+
+SDStorage can also manage named, persistent counters called sequences. A sequence just tracks a `uint64_t` value on the SD card; a common use is generating unique, incrementing IDs for filenames or record keys.
+
+**Creating a Sequence:** Like an `Index`, a `Sequence` is defined with a name, which is also used as a filename under the hood (FAT16 rules apply, no extension):
+
+```cpp
+#include <Sequence.h>
+
+sdstorage::Sequence mySeq(F("my_seq"));  // create a sequence named "my_seq"
+```
+
+Defining a `Sequence` does not create or populate storage — it simply declares that the sequence exists. A `Sequence` must be advanced with `seqNext(...)` (or given an explicit starting point with `seqInit(...)`, below) at least once before `seqCurrent(...)` can be called on it — reading a sequence that has never been touched is a usage error, not a legitimate "starts at 0" state.
+
+**Reading and Incrementing:** `seqNext(...)` increments the value, persists it, and returns the new value — calling it on a brand-new sequence is exactly how a sequence gets created, and its first call always returns `1`. `seqCurrent(...)` returns the current value without changing it, but only once the sequence has been advanced at least once:
+
+```cpp
+uint64_t id = sdStorage.seqNext(mySeq);  // 1 the first time, 2 the next, ...
+Serial.println(id);
+
+uint64_t sameId = sdStorage.seqCurrent(mySeq);  // does not increment; valid now that seqNext() has run
+```
+
+`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. A `0` return always means something failed, but not every failure invokes the `errFunction` you passed to the `SDStorage` constructor: it's invoked when the sequence reached `UINT64_MAX` and would have wrapped back to `0`, when an existing sequence file could not be read or parsed (a corrupt or unreadable file), or — for `seqCurrent(...)` specifically — when the sequence has never been advanced or initialized. Other `0`-returning failures — e.g. an invalid sequence filename, or a sequence that isn't part of the transaction it was given — fail without invoking `errFunction`.
+
+**Setting an Initial Value:** If a sequence needs to start somewhere other than `1` (for example, importing IDs from existing data), use `seqInit(...)` to explicitly set its starting value before ever calling `seqNext(...)` or `seqCurrent(...)`:
+
+```cpp
+sdstorage::Sequence importedSeq(F("imported"));
+if (sdStorage.seqInit(importedSeq, 1000)) {
+    uint64_t nextId = sdStorage.seqNext(importedSeq);  // 1001
+}
+```
+
+The initial value must be `1` or greater — like every other `0`-returning failure, passing `0` invokes `errFunction` and returns `false`, since `0` is reserved throughout this API to mean "never initialized."
+
+**Converting to a String:** If you need the sequence's value as a filename-safe string rather than a raw integer, pass a conversion function shaped like `bool (*)(uint64_t value, char* out)`:
+
+```cpp
+// avr-libc's sprintf has no 64-bit conversion, so a real converter for
+// the full uint64_t range needs a manual implementation (see
+// SDStorageStrings::uint64ToString, or a compact base-N FAT16-safe
+// encoder for something more compact). This one truncates to 32 bits -
+// fine for a demo, not for a sequence expected to run past ~4 billion.
+bool toDecimal(uint64_t value, char* out) {
+    return sprintf(out, "%lu", (unsigned long)value) > 0;
+}
+
+char filename[21];
+if (sdStorage.seqNext(mySeq, filename, toDecimal)) {
+    Serial.println(filename);  // e.g., "1"
+}
+```
+
+The buffer must be sized by the caller for whatever the conversion function needs — a full 64-bit decimal encoder needs up to 21 bytes, but a more compact base-N encoder could need far fewer.
+
+**Sequences and Transactions:** A `Sequence` can be included in a transaction exactly like a file or an `Index`, so you can generate an ID and save a file named with it as one atomic unit:
+
+```cpp
+Transaction* txn = sdStorage.beginTxn(mySeq, "somefile.dat");
+if (txn) {
+    uint64_t id = sdStorage.seqNext(mySeq, txn);
+    sdStorage.save("somefile.dat", &someDto, txn);
+    sdStorage.commitTxn(txn);
+}
+```
+
+For more details, see the [`sequence` example](/examples/sequence/sequence.ino).
 
 ## Transactions: Atomic Updates
 
-`SDStorage` can perform atomic updates (all succeeding or all failing) of multiple files and/or indexes with transactions. If power is lost during a write operation, `SDStorage` will try to complete the transaction on restart, or it will abort and clean up, leaving everything unchanged. Even if you don’t use transactions explicitly, SDStorage wraps each individual write in an implicit transaction, allowing recovery from partial writes on restart.
+`SDStorage` can perform atomic updates (all succeeding or all failing) of multiple files, indexes, and/or sequences with transactions. If power is lost during a write operation, `SDStorage` will try to complete the transaction on restart, or it will abort and clean up, leaving everything unchanged. Even if you don’t use transactions explicitly, SDStorage wraps each individual write in an implicit transaction, allowing recovery from partial writes on restart.
 
-You can have multiple transactions at the same time, but they do not nest. Also, they cannot include any of the same files or indexes. Trying to begin a transaction with a file or index that is already part of another transaction will cause the system to hang.
+You can have multiple transactions at the same time, but they do not nest. Also, they cannot include any of the same files, indexes, or sequences. Trying to begin a transaction with a file, index, or sequence that is already part of another transaction will cause the system to hang.
 
 Currently, only one index operation can be performed per index within a transaction.
 
-**Beginning a Transaction:** To start a transaction, call `sdStorage.beginTxn(...)` passing all the filenames and `Index`es you plan to change. This returns a `Transaction*` that you will need to pass to any write operations you want to be part of the transaction:
+**Beginning a Transaction:** To start a transaction, call `sdStorage.beginTxn(...)` passing all the filenames, `Index`es, and `Sequence`s you plan to change. This returns a `Transaction*` that you will need to pass to any write operations you want to be part of the transaction:
 
 ```cpp
 const char* filename = "config1.dat";
