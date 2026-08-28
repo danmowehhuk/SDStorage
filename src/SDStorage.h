@@ -14,11 +14,13 @@
 
 
 #include "Index.h"
+#include "Sequence.h"
 #include "hal/FlashStr.h"
 #include <StreamableDTO.h>
 #include <StreamableManager.h>
 #include "sdstorage/FileHelper.h"
 #include "sdstorage/IndexManager.h"
+#include "sdstorage/SequenceManager.h"
 #include "sdstorage/Transaction.h"
 #include "sdstorage/TransactionManager.h"
 #include "sdstorage/StorageProvider.h"
@@ -48,10 +50,11 @@ class SDStorage {
      * a cleanup of the work directory, applying any finalized transactions
      * and rolling back any others.
      */
-    SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr): 
+    SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr):
           _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin), _errFunction(errFunction) {
         _txnManager = new TransactionManager(&_fileHelper, &_storageProvider, _errFunction);
         _idxManager = new IndexManager(&_fileHelper, &_storageProvider, _txnManager);
+        _seqManager = new SequenceManager(&_fileHelper, &_storageProvider, _txnManager, _errFunction);
     };
     SDStorage(uint8_t sdCsPin, const char* rootDir, void (*errFunction)() = nullptr): 
           SDStorage(sdCsPin, rootDir, false, errFunction) {};
@@ -61,6 +64,7 @@ class SDStorage {
     ~SDStorage() {
       if (_txnManager) delete _txnManager;
       if (_idxManager) delete _idxManager;
+      if (_seqManager) delete _seqManager;
     }
 
     // Disable moving and copying
@@ -234,6 +238,7 @@ class SDStorage {
     StorageProvider _storageProvider;
     TransactionManager* _txnManager = nullptr;
     IndexManager* _idxManager = nullptr;
+    SequenceManager* _seqManager = nullptr;
 
     /*
      * Cleans up the _workDir on initialization in case any transactions were

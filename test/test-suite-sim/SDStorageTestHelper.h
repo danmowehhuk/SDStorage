@@ -65,6 +65,9 @@ class SDStorageTestHelper {
       free(l);
       return result;
     };
+    uint64_t seqCurrentRaw(SDStorage* sdStorage, sdstorage::Sequence seq, void* testState = nullptr) {
+      return sdStorage->_seqManager->current(seq, testState);
+    };
 };
 
 

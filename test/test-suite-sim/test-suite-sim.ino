@@ -363,6 +363,23 @@ void testSequenceFilename(TestInvocation* t) {
   t->verifyEqual(seqFilename, F("/TESTROOT/~SEQ/foo.seq"));
 }
 
+void testSeqCurrent_notYetCreated(TestInvocation* t) {
+  t->setName(F("Sequence current() - not yet created"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
+
+  t->verify(helper.seqCurrentRaw(sdStorage, Sequence(F("mySeq")), &ts) == 0, F("Expected 0 for a brand-new sequence"));
+}
+
+void testSeqCurrent_existingValue(TestInvocation* t) {
+  t->setName(F("Sequence current() - existing value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists
+  ts.onLoadData = strdup(F("v=42\n"));
+
+  t->verify(helper.seqCurrentRaw(sdStorage, Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
+}
+
 void testToIndexLine(TestInvocation* t) {
   t->setName(F("Convert IndexEntry to chars"));
   char line[64];
@@ -741,6 +758,8 @@ void setup() {
     testSaveFile_noTxn,
     testIdxFilename,
     testSequenceFilename,
+    testSeqCurrent_notYetCreated,
+    testSeqCurrent_existingValue,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,
