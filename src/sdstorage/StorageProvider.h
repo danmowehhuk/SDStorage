@@ -6,6 +6,11 @@
 #include <StreamableManager.h>
 #if defined(__SDSTORAGE_TEST)
   #include "../../test/test-suite-sim/MockSdFat.h"
+#elif defined(NO_ARDUINO)
+  #include "../hal/File.h"
+  #include <BareMetalHAL.h>
+  #include "avr/fatfs/ff.h"
+  #include "avr/fatfs/sdcard.h"
 #else
   #include <SdFat.h>
 #endif
@@ -29,13 +34,27 @@ class StorageProvider {
     StreamableManager _streams;
 #if defined(__SDSTORAGE_TEST)
     MockSdFat _sd;
+#elif defined(NO_ARDUINO)
+    // Carries FatFs's ~512-byte window buffer as static RAM (FF_FS_TINY=1
+    // in ffconf.h) - worth knowing for anyone considering a smaller AVR part.
+    FATFS _fatfs;
 #else
     SdFat _sd;
 #endif
 
+#if defined(NO_ARDUINO)
+    // Caller must have already called BareMetalHAL::spiBegin(sck, mosi,
+    // miso) to configure the SPI bus - this only sets the chip-select
+    // pin and mounts the filesystem over that already-configured bus.
+    bool begin() {
+      sdDiskSetCsPin(_sdCsPin);
+      return f_mount(&_fatfs, "", 1) == FR_OK;
+    }
+#else
     bool begin() {
       return _sd.begin(_sdCsPin);
     }
+#endif
 
     /*
      * Wrap the underlying calls to _sd so that a state capture object

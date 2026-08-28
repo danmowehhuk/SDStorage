@@ -13,7 +13,7 @@
 #define _SDStorage_Index_h
 
 
-#include <Arduino.h>
+#include "hal/FlashStr.h"
 #include "sdstorage/Strings.h"
 
 using namespace SDStorageStrings;
@@ -28,7 +28,7 @@ namespace sdstorage {
 
       explicit Index(const char* n, bool isPmem = false): 
           name(n), isPmem(isPmem) {};
-      explicit Index(const __FlashStringHelper* n):
+      explicit Index(const FlashStr* n):
           name(reinterpret_cast<const char*>(n)), isPmem(true) {};
 
       static Index fromProgmem(const char* n) {
@@ -41,14 +41,14 @@ namespace sdstorage {
     const char* key;
     const char* value;
     IndexEntry(const char* k): key(strdup(k)), value(nullptr) {};
-    IndexEntry(const __FlashStringHelper* k): key(strdup(k)), value(nullptr) {};
+    IndexEntry(const FlashStr* k): key(strdup(k)), value(nullptr) {};
     IndexEntry(const char* k, const char* v):
         key(strdup(k)), value(strdup(v)) {};
-    IndexEntry(const char* k, const __FlashStringHelper* v):
+    IndexEntry(const char* k, const FlashStr* v):
         key(strdup(k)), value(strdup(v)) {};
-    IndexEntry(const __FlashStringHelper* k, const char* v):
+    IndexEntry(const FlashStr* k, const char* v):
         key(strdup(k)), value(strdup(v)) {};
-    IndexEntry(const __FlashStringHelper* k, const __FlashStringHelper* v):
+    IndexEntry(const FlashStr* k, const FlashStr* v):
         key(strdup(k)), value(strdup(v)) {};
 
     IndexEntry(const IndexEntry& other)

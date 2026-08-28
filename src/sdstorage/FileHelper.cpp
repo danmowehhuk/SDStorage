@@ -1,5 +1,6 @@
 #include "FileHelper.h"
 #include "Strings.h"
+#include "../hal/SDStorageHal.h"
 
 
 using namespace SDStorageStrings;
@@ -29,7 +30,7 @@ FileHelper::FileHelper(const char* rootDir, bool isRootDirPmem) {
   if (result) _workDir = strdup(buffer);
 #if (defined(DEBUG))
   if (!result) {
-    Serial.println(F("FileHelper initialization failed"));
+    SDStorageHal::println(F("FileHelper initialization failed"));
   }
 #endif
 };
@@ -138,8 +139,8 @@ bool FileHelper::getPathFromFilename(const char* filename, char* buffer, size_t 
     if (pathLen == 0) pathLen = 1; // Root case "/"
     if (pathLen + 1 >= MAX_FILENAME_LENGTH) {
 #if (defined(DEBUG))
-      Serial.print(F("pathLen exceeds allowed maximum of "));
-      Serial.println(MAX_FILENAME_LENGTH);
+      SDStorageHal::print(F("pathLen exceeds allowed maximum of "));
+      SDStorageHal::println(MAX_FILENAME_LENGTH);
 #endif
       break;
     }
@@ -165,8 +166,8 @@ bool FileHelper::getFilenameFromFullName(const char* filename, char* buffer, siz
     size_t baseNameLen = strlen(baseName);
     if (baseNameLen + 1 >= MAX_FILENAME_LENGTH) {
 #if (defined(DEBUG))
-      Serial.print(F("pathLen exceeds allowed maximum of "));
-      Serial.println(MAX_FILENAME_LENGTH);
+      SDStorageHal::print(F("pathLen exceeds allowed maximum of "));
+      SDStorageHal::println(MAX_FILENAME_LENGTH);
 #endif
       break;
     }
@@ -200,8 +201,8 @@ bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t buffer
 bool FileHelper::verifyBufferSize(size_t bufferSize) {
   if (bufferSize > MAX_FILENAME_LENGTH) {
 #if (defined(DEBUG))
-    Serial.print(F("bufferSize exceeds allowed maximum of "));
-    Serial.println(MAX_FILENAME_LENGTH);
+    SDStorageHal::print(F("bufferSize exceeds allowed maximum of "));
+    SDStorageHal::println(MAX_FILENAME_LENGTH);
 #endif
     return false;
   }

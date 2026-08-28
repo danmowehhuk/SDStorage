@@ -1,4 +1,5 @@
 #include "IndexManager.h"
+#include "../hal/SDStorageHal.h"
 
 using namespace SDStorageStrings;
 
@@ -9,7 +10,7 @@ bool IndexManager::idxUpsert(Index idx, IndexEntry* entry, Transaction* txn = nu
 bool IndexManager::idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
   if (!idx.name || isEmpty(entry->key)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxUpsert - index name and entry key cannot be empty"));
+    SDStorageHal::println(F("IndexManager::idxUpsert - index name and entry key cannot be empty"));
 #endif
     return false;
   }
@@ -49,7 +50,7 @@ bool IndexManager::idxRemove(Index idx, const char* key, Transaction* txn = null
 bool IndexManager::idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr) {
     if (!idx.name || isEmpty(key)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxRemove - index name and key cannot be empty"));
+    SDStorageHal::println(F("IndexManager::idxRemove - index name and key cannot be empty"));
 #endif
     return false;
   }
@@ -72,7 +73,7 @@ bool IndexManager::idxRename(Index idx, const char* oldKey, const char* newKey, 
 bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
   if (!idx.name || isEmpty(oldKey) || isEmpty(newKey)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxRename - index name, oldKey and newKey cannot be empty"));
+    SDStorageHal::println(F("IndexManager::idxRename - index name, oldKey and newKey cannot be empty"));
 #endif
     return false;
   }
@@ -80,22 +81,22 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
   IndexTransaction iTxn = _makeIndexTransaction(testState, idx, txn);
   if (!iTxn.idxFilename || !iTxn.txn) return false;
 
-  boolean success = false;
+  bool success = false;
   IndexScanFilters::IdxScanCapture lookupState(oldKey);
   IndexScanFilters::IdxScanCapture state(oldKey, newKey, true);
   success = _idxScan(iTxn.idxFilename, &lookupState, testState);
 
   if (!success) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxRename - index scan failed"));
+    SDStorageHal::println(F("IndexManager::idxRename - index scan failed"));
 #endif    
   } else {
     if (!lookupState.keyExists) {
 #if (defined(DEBUG))
-      Serial.print(F("Key to rename '"));
-      Serial.print(oldKey);
-      Serial.print(F("' not in "));
-      Serial.println(iTxn.idxFilename);
+      SDStorageHal::print(F("Key to rename '"));
+      SDStorageHal::print(oldKey);
+      SDStorageHal::print(F("' not in "));
+      SDStorageHal::println(iTxn.idxFilename);
 #endif
     }
 
@@ -113,14 +114,14 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
 bool IndexManager::idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
   if (!idx.name || isEmpty(key) || !buffer || bufferSize <= 0) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxLookup - index name, key and buffer required"));
+    SDStorageHal::println(F("IndexManager::idxLookup - index name, key and buffer required"));
 #endif
     return false;
   }
   char idxFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->indexFilename(idx, idxFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxLookup - indexFilename failure"));
+    SDStorageHal::println(F("IndexManager::idxLookup - indexFilename failure"));
 #endif
     return false;
   }
@@ -147,14 +148,14 @@ bool IndexManager::idxLookup(Index idx, const char* key, char* buffer, size_t bu
 bool IndexManager::idxHasKey(Index idx, const char* key, void* testState = nullptr) {
   if (!idx.name || isEmpty(key)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxLookup - index name and key"));
+    SDStorageHal::println(F("IndexManager::idxLookup - index name and key"));
 #endif
     return false;
   }
   char idxFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->indexFilename(idx, idxFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxLookup - indexFilename failure"));
+    SDStorageHal::println(F("IndexManager::idxLookup - indexFilename failure"));
 #endif
     return false;
   }
@@ -167,14 +168,14 @@ bool IndexManager::idxHasKey(Index idx, const char* key, void* testState = nullp
 bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* testState = nullptr) {
   if (!idx.name) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxPrefixSearch - index is required"));
+    SDStorageHal::println(F("IndexManager::idxPrefixSearch - index is required"));
 #endif
     return false;
   }
   char idxFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->indexFilename(idx, idxFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::idxLookup - indexFilename failure"));
+    SDStorageHal::println(F("IndexManager::idxLookup - indexFilename failure"));
 #endif
     return false;
   }
@@ -208,11 +209,11 @@ bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* test
 bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState = nullptr) {
   if (!idxFilename || !state || isEmpty(state->key)) {
 #if (defined(DEBUG))
-    Serial.println(F("IndexManager::_idxScan - index name and key cannot be empty"));
+    SDStorageHal::println(F("IndexManager::_idxScan - index name and key cannot be empty"));
 #endif
     return false;
   }
-  boolean success = false;
+  bool success = false;
   if (_storageProvider->_exists(idxFilename, testState)) {
     success = _storageProvider->_scanIndex(idxFilename, IndexScanFilters::idxLookupFilter, state, testState);
   }
