@@ -9,11 +9,15 @@
 # SimulIDE accepts. The avr-objcopy path is extracted from the verbose compiler
 # output, so it is always the correct binary for the toolchain and MCU in use.
 
-# Always point --library at this exact script's own containing library
-# root, whether that's the main checkout or a git worktree - arduino-cli
-# otherwise silently resolves the library from ~/Arduino/libraries/<name>
-# instead of this copy when compiling from a worktree.
-LIBRARY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# --library pins this sketch's SDStorage dependency to the copy this
+# script lives under (two directories up), not whatever arduino-cli
+# would otherwise discover under ~/Arduino/libraries - important when
+# running from a worktree, since arduino-cli silently prefers
+# ~/Arduino/libraries/SDStorage over the worktree copy unless told
+# otherwise.
+
+DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+LIBRARY_ROOT="$(cd "$DIR/../.." && pwd)"
 
 SIM_MODE=false
 while getopts "s" opt; do
@@ -23,8 +27,7 @@ while getopts "s" opt; do
 done
 
 COMPILE_CMD="arduino-cli compile -e -b arduino:avr:mega \
-  --library \"$LIBRARY_ROOT\" \
-  --libraries ~/Arduino/libraries \
+  --libraries ~/Arduino/libraries --library \"$LIBRARY_ROOT\" --clean \
   --build-property build.extra_flags=\"-DDEBUG -D__SDSTORAGE_TEST\""
 
 if $SIM_MODE; then

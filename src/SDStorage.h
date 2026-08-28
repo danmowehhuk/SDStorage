@@ -89,8 +89,8 @@ class SDStorage {
     bool mkdir(const char* dirName, bool isDirNamePmem = false, void* testState = nullptr);
     bool mkdir(const FlashStr* dirName, void* testState = nullptr);
     bool mkdir_P(const char* dirName, void* testState = nullptr);
-    bool load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr);
-    bool load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr);
+    bool load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr, Transaction* txn = nullptr);
+    bool load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr, Transaction* txn = nullptr);
     bool save(const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
     bool save(void* testState, const char* filename, StreamableDTO* dto, Transaction* txn = nullptr, bool isFilenamePmem = false);
     bool save(const FlashStr* filename, StreamableDTO* dto, Transaction* txn = nullptr);
