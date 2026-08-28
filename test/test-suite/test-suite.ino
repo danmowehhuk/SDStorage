@@ -35,6 +35,7 @@ void testBegin(TestInvocation* t) {
   t->verify(sdFat->exists("/TESTROOT"), F("/TESTROOT does not exist"));
   t->verify(sdFat->exists("/TESTROOT/~WORK"), F("/TESTROOT/~WORK does not exist"));
   t->verify(sdFat->exists("/TESTROOT/~IDX"), F("/TESTROOT/~IDX does not exist"));
+  t->verify(sdFat->exists("/TESTROOT/~SEQ"), F("/TESTROOT/~SEQ does not exist"));
 
   File workDirFile = sdFat->open("/TESTROOT/~WORK");
   t->verify(!workDirFile.openNextFile(), F("/TESTROOT/~WORK not empty!"));
@@ -315,6 +316,21 @@ void testFsck(TestInvocation* t) {
   workDirFileAfter.close();
 }
 
+void testSeqCurrentNext(TestInvocation* t) {
+  t->setName(F("seqCurrent()/seqNext() round-trip"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  sdFat->remove("/TESTROOT/~SEQ/seq1.seq");
+
+  Sequence mySeq(F("seq1"));
+  t->verify(sdStorage.seqCurrent(mySeq) == 0, F("Expected 0 for a brand-new sequence"));
+  t->verify(sdStorage.seqNext(mySeq) == 1, F("Expected 1"));
+  t->verify(sdStorage.seqNext(mySeq) == 2, F("Expected 2"));
+  t->verify(sdStorage.seqCurrent(mySeq) == 2, F("current() after two next() calls should be 2"));
+
+  // cleanup
+  t->verify(sdFat->remove(F("/TESTROOT/~SEQ/seq1.seq")), F("Erase failed"));
+}
 
 void setup() {
   Serial.begin(9600);
@@ -339,7 +355,8 @@ void setup() {
     testIndexRemoveKey,
     testTransaction_success,
     testTransaction_abort,
-    testFsck
+    testFsck,
+    testSeqCurrentNext
   };
 
   runTestSuiteShowMem(tests, before, nullptr);
