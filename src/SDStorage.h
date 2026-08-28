@@ -206,13 +206,13 @@ class SDStorage {
      * TRANSACTION OPERATIONS
      *
      * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
-     * or a mixture of both. Indexes may also be provided. All will be converted to absolute canonical
-     * filenames, the root directory prepended if necessary.
+     * or a mixture of both. Indexes and Sequences may also be provided. All will be converted to
+     * absolute canonical filenames, the root directory prepended if necessary.
      *
-     * NOTE: If a file or index is added to a transaction, then the Transaction* MUST be passed
-     *       to any write operation involving that file or index. Otherwise, SDStorage will try
-     *       to create an implicit transaction and hang because the other transaction is already
-     *       holding a lock on the file or index.
+     * NOTE: If a file, index, or sequence is added to a transaction, then the Transaction* MUST be
+     *       passed to any write operation involving that file, index, or sequence. Otherwise,
+     *       SDStorage will try to create an implicit transaction and hang because the other
+     *       transaction is already holding a lock on the file, index, or sequence.
      */
     template <typename... Args>
     Transaction* beginTxn(const char* filename, Args... moreFilenames) {

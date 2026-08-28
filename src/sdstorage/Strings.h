@@ -2,6 +2,7 @@
 #define _SDStorage_Strings_h
 
 #include "../hal/FlashStr.h"
+#include <stdint.h>
 
 namespace SDStorageStrings {
 

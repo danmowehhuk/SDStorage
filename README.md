@@ -9,6 +9,7 @@
 - **[StreamableDTO](https://github.com/danmowehhuk/StreamableDTO) Persistence:** Designed specifically to save and load StreamableDTO objects to SD cards.
 - **Native Indexes:** Create one or more indexes on any string-based key/value data (e.g., a field of your DTO). All index operations run in O(n) time but require only O(1) memory, making them well-suited for low-memory embedded systems.
 - **Prefix Searches:** Indexes support efficient prefix-based lookups. This allows you to retrieve all entries with keys matching a given prefix, which is perfect for building UI features like auto-complete (e.g., ComboBoxes that suggest entries as you type) or implementing trie-based searches.
+- **Sequences:** Named, persistent `uint64_t` counters for generating unique, incrementing IDs (e.g., for filenames or record keys), backed by the SD card so they survive a restart.
 - **Atomic Transactions:** SDStorage supports transactional updates, meaning you can group multiple operations (such as saving a DTO and updating several indexes) into one atomic unit.
 
 ## Installation
@@ -208,15 +209,15 @@ Serial.println(id);
 uint64_t sameId = sdStorage.seqCurrent(mySeq);  // does not increment
 ```
 
-`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. If it ever returns `0`, something failed (an I/O error, or the sequence reached `UINT64_MAX` and would have wrapped back to `0`); in that case, the `errFunction` you passed to the `SDStorage` constructor is invoked, the same as any other unrecoverable SDStorage error.
+`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. A `0` return always means something failed, but not every failure invokes the `errFunction` you passed to the `SDStorage` constructor: it's invoked only when the sequence reached `UINT64_MAX` and would have wrapped back to `0`, or when an existing sequence file could not be read or parsed (a corrupt or unreadable file). Other `0`-returning failures — e.g. an invalid sequence filename, or a sequence that isn't part of the transaction it was given — fail without invoking `errFunction`.
 
 **Converting to a String:** If you need the sequence's value as a filename-safe string rather than a raw integer, pass a conversion function shaped like `bool (*)(uint64_t value, char* out)`:
 
 ```cpp
 // avr-libc's sprintf has no 64-bit conversion, so a real converter for
 // the full uint64_t range needs a manual implementation (see
-// SDStorageStrings::uint64ToString, or RCEntities' idToFAT16 for a
-// compact base-38 FAT16-safe encoding). This one truncates to 32 bits -
+// SDStorageStrings::uint64ToString, or a compact base-N FAT16-safe
+// encoder for something more compact). This one truncates to 32 bits -
 // fine for a demo, not for a sequence expected to run past ~4 billion.
 bool toDecimal(uint64_t value, char* out) {
     return sprintf(out, "%lu", (unsigned long)value) > 0;
@@ -245,13 +246,13 @@ For more details, see the [`sequence` example](/examples/sequence/sequence.ino).
 
 ## Transactions: Atomic Updates
 
-`SDStorage` can perform atomic updates (all succeeding or all failing) of multiple files and/or indexes with transactions. If power is lost during a write operation, `SDStorage` will try to complete the transaction on restart, or it will abort and clean up, leaving everything unchanged. Even if you don’t use transactions explicitly, SDStorage wraps each individual write in an implicit transaction, allowing recovery from partial writes on restart.
+`SDStorage` can perform atomic updates (all succeeding or all failing) of multiple files, indexes, and/or sequences with transactions. If power is lost during a write operation, `SDStorage` will try to complete the transaction on restart, or it will abort and clean up, leaving everything unchanged. Even if you don’t use transactions explicitly, SDStorage wraps each individual write in an implicit transaction, allowing recovery from partial writes on restart.
 
-You can have multiple transactions at the same time, but they do not nest. Also, they cannot include any of the same files or indexes. Trying to begin a transaction with a file or index that is already part of another transaction will cause the system to hang.
+You can have multiple transactions at the same time, but they do not nest. Also, they cannot include any of the same files, indexes, or sequences. Trying to begin a transaction with a file, index, or sequence that is already part of another transaction will cause the system to hang.
 
 Currently, only one index operation can be performed per index within a transaction.
 
-**Beginning a Transaction:** To start a transaction, call `sdStorage.beginTxn(...)` passing all the filenames and `Index`es you plan to change. This returns a `Transaction*` that you will need to pass to any write operations you want to be part of the transaction:
+**Beginning a Transaction:** To start a transaction, call `sdStorage.beginTxn(...)` passing all the filenames, `Index`es, and `Sequence`s you plan to change. This returns a `Transaction*` that you will need to pass to any write operations you want to be part of the transaction:
 
 ```cpp
 const char* filename = "config1.dat";

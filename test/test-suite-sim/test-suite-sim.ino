@@ -429,6 +429,20 @@ bool toDecimalString(uint64_t value, char* out) {
   return uint64ToString(value, out, 21); // 20 digits + null terminator
 }
 
+void testSeqNext_corruptZeroValueCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - existing file with unparseable/zero value calls errFunction, does not reset"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("garbage\n")); // no "v=" key parses to value 0
+  ts.onExistsReturn[1] = true; // mySeq.seq still exists (next()'s curr==0 anomaly check)
+
+  errThrown = false;
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
+  t->verify(result == 0, F("Expected 0 on corrupt/unparseable existing file"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
 void testSeqCurrent_stringify(TestInvocation* t) {
   t->setName(F("Sequence current() - stringify overload"));
   MockSdFat::TestState ts;
@@ -501,6 +515,47 @@ void testSeqNext_withExplicitTxn(TestInvocation* t) {
 
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
+}
+
+void testSeqNext_withExplicitTxn_calledTwice(TestInvocation* t) {
+  t->setName(F("Sequence next() - two calls on the same explicit txn return different values"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // First next() call: no pending tmp value written yet, so it falls back to
+  // current(): index 3 = the pending-tmp-file exists check (false, nothing
+  // written yet), index 4 = current()'s own exists check on mySeq.seq (false),
+  // index 5 = the curr==0 anomaly check's exists on mySeq.seq (false, the
+  // file genuinely doesn't exist yet).
+  ts.onExistsReturn[3] = false;
+  ts.onExistsReturn[4] = false;
+  ts.onExistsReturn[5] = false;
+  uint64_t first = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(first == 1, F("Expected 1 on first call"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written on first call"));
+
+  // Second next() call: the pending tmp file now exists, holding the value
+  // written by the first call - next() must read that instead of the
+  // (still-uncommitted) committed file, or it would silently return 1 again.
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onLoadData = strdup(ts.writeDataCaptor.get()); // "v=1\n" - what the first call wrote
+  ts.writeDataCaptor.reset();
+  uint64_t second = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(second == 2, F("Expected 2 on second call - must not repeat 1"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=2\n"), F("Unexpected data written on second call"));
+
   ts.onRenameReturn = true;
   ts.onRemoveReturn = true;
   t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
@@ -889,11 +944,13 @@ void setup() {
     testSeqNext_firstValueNoTxn,
     testSeqNext_incrementsExistingValue,
     testSeqNext_overflowCallsErrFunction,
+    testSeqNext_corruptZeroValueCallsErrFunction,
     testSeqCurrent_stringify,
     testSeqNext_stringify,
     testSeqNext_stringify_overflowFails,
     testBeginTxn_withSequence,
     testSeqNext_withExplicitTxn,
+    testSeqNext_withExplicitTxn_calledTwice,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,

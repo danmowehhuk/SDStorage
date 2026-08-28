@@ -22,7 +22,7 @@ namespace sdstorage {
    * Converts a Sequence's current uint64_t value into a caller-supplied
    * buffer, returning true on success. The buffer must be sized by the
    * caller to whatever the specific conversion function requires (e.g.
-   * RCEntities' idToFAT16() needs at least 9 bytes).
+   * a compact base-N FAT16-safe encoder needs only about 9 bytes).
    */
   typedef bool (*SeqToString)(uint64_t value, char* out);
 
