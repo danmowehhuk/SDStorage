@@ -79,17 +79,8 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
   bool result = false;
   if (!_storageProvider->_exists(resolvedFilename, testState)) {
     do {
-      // Validate new file to be created
-      char shortFilename[FileHelper::MAX_FILENAME_LENGTH];
-      if (!FileHelper::getFilenameFromFullName(resolvedFilename, shortFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
-      if (!FileHelper::isValidFAT16Filename(shortFilename)) {
-#if defined(DEBUG)
-        SDStorageHal::print(F("Invalid FAT16 filename: "));
-        SDStorageHal::println(shortFilename);
-#endif
-        break;
-      }
-
+      // FAT16 validation already happened inside canonicalFilename() above,
+      // before any transaction/lock state existed - no need to repeat it here.
       char path[FileHelper::MAX_FILENAME_LENGTH];
       if (!FileHelper::getPathFromFilename(resolvedFilename, path, FileHelper::MAX_FILENAME_LENGTH)) break;
       if (!_storageProvider->_exists(path, testState)) {

@@ -63,6 +63,15 @@ void testCanonicalFilename(TestInvocation* t) {
   t->verifyEqual(resolvedName, F("/TESTROOT/foo"), F("Ignore already under rootDir"));
 }
 
+void testCanonicalFilename_rejectsInvalidFAT16Name(TestInvocation* t) {
+  t->setName(F("Filename resolution - rejects invalid FAT16 name early"));
+  char resolvedName[64];
+  // "???" is not a valid FAT16 filename - this must fail here, at name
+  // resolution time, before any transaction/lock state or SD I/O exists.
+  t->verify(!helper.canonicalFilename(sdStorage, helper.toFilename(F("???")), resolvedName, 64),
+        F("canonicalFilename should have rejected an invalid FAT16 name"));
+}
+
 void testMakeDir(TestInvocation* t) {
   t->setName(F("mkdir prepends rootDir"));
   MockSdFat::TestState ts;
@@ -376,12 +385,26 @@ void testIdxFilename(TestInvocation* t) {
   t->verifyEqual(idxFilename, F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
 }
 
+void testIdxFilename_rejectsInvalidFAT16Name(TestInvocation* t) {
+  t->setName(F("Index filename - rejects invalid FAT16 name early"));
+  char idxFilename[64];
+  t->verify(!helper.getIndexFilename(sdStorage, Index(F("???")), idxFilename, 64),
+        F("getIndexFilename should have rejected an invalid FAT16 name"));
+}
+
 void testSequenceFilename(TestInvocation* t) {
   t->setName(F("Sequence filename"));
   char seqFilename[64];
   t->verify(helper.getSequenceFilename(sdStorage, sdstorage::Sequence(F("foo")), seqFilename, 64),
         F("getSequenceFilename returned false"));
   t->verifyEqual(seqFilename, F("/TESTROOT/~SEQ/foo.seq"));
+}
+
+void testSequenceFilename_rejectsInvalidFAT16Name(TestInvocation* t) {
+  t->setName(F("Sequence filename - rejects invalid FAT16 name early"));
+  char seqFilename[64];
+  t->verify(!helper.getSequenceFilename(sdStorage, sdstorage::Sequence(F("???")), seqFilename, 64),
+        F("getSequenceFilename should have rejected an invalid FAT16 name"));
 }
 
 void testSeqCurrent_notYetCreated_callsErrFunction(TestInvocation* t) {
@@ -1148,6 +1171,7 @@ void setup() {
     testBegin,
     testConstructor,
     testCanonicalFilename,
+    testCanonicalFilename_rejectsInvalidFAT16Name,
     testMakeDir,
     testFileExists,
     testIsValidFAT16Filename,
@@ -1170,7 +1194,9 @@ void setup() {
     testLoadFile_withTxn_readsStagedEdit,
     testSaveFile_noTxn,
     testIdxFilename,
+    testIdxFilename_rejectsInvalidFAT16Name,
     testSequenceFilename,
+    testSequenceFilename_rejectsInvalidFAT16Name,
     testSeqCurrent_notYetCreated_callsErrFunction,
     testSeqCurrent_existingValue,
     testSeqInit_happyPath,
