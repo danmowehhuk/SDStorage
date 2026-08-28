@@ -252,6 +252,92 @@ void testTransaction_abort(TestInvocation* t) {
   t->verify(!sdFat->exists("/TESTROOT/file5.dat"), F("Aborted file created anyway"));
 }
 
+void testTransaction_repeatFileEdit(TestInvocation* t) {
+  t->setName(F("Edit the same file twice in one transaction, interleaved with another file"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  sdStorage.erase(F("file6.dat"));
+  sdStorage.erase(F("file7.dat"));
+
+  Transaction* txn = sdStorage.beginTxn(F("file6.dat"), F("file7.dat"));
+  t->verify(txn, F("beginTxn failed"));
+
+  StreamableDTO dtoA1;
+  dtoA1.put(F("step"), F("1"));
+  t->verify(sdStorage.save(F("file6.dat"), &dtoA1, txn), F("First save of file6 failed"));
+
+  StreamableDTO dtoB;
+  dtoB.put(F("b"), F("1"));
+  t->verify(sdStorage.save(F("file7.dat"), &dtoB, txn), F("Save of file7 failed"));
+
+  StreamableDTO dtoA2;
+  t->verify(sdStorage.load(F("file6.dat"), &dtoA2, nullptr, txn), F("Reload of file6 within the transaction failed"));
+  t->verifyEqual(dtoA2.get(F("step")), F("1"), F("Reload within the transaction lost the first edit"));
+  dtoA2.put(F("step"), F("2"));
+  t->verify(sdStorage.save(F("file6.dat"), &dtoA2, txn), F("Second save of file6 failed"));
+
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+
+  StreamableDTO finalA;
+  t->verify(sdStorage.load(F("file6.dat"), &finalA), F("Final load of file6 failed"));
+  t->verifyEqual(finalA.get(F("step")), F("2"), F("Committed file6 does not reflect both edits"));
+  StreamableDTO finalB;
+  t->verify(sdStorage.load(F("file7.dat"), &finalB), F("Final load of file7 failed"));
+  t->verifyEqual(finalB.get(F("b")), F("1"), F("Committed file7 is incorrect"));
+
+  // cleanup
+  t->verify(sdStorage.erase(F("file6.dat")), F("Erase failed"));
+  t->verify(sdStorage.erase(F("file7.dat")), F("Erase failed"));
+}
+
+void testTransaction_repeatFileAndIndexEdits(TestInvocation* t) {
+  t->setName(F("Repeated file and index edits, interleaved, in one transaction"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  sdFat->remove("/TESTROOT/~IDX/idx6.idx");
+  sdStorage.erase(F("file8.dat"));
+  sdStorage.erase(F("file9.dat"));
+
+  Index myIdx(F("idx6"));
+  Transaction* txn = sdStorage.beginTxn(myIdx, F("file8.dat"), F("file9.dat"));
+  t->verify(txn, F("beginTxn failed"));
+
+  StreamableDTO dtoA;
+  dtoA.put(F("n"), F("1"));
+  t->verify(sdStorage.save(F("file8.dat"), &dtoA, txn), F("Save of file8 (edit 1) failed"));
+  IndexEntry entryA(F("file8"), F("1"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA, txn), F("First index upsert failed"));
+
+  StreamableDTO dtoB;
+  dtoB.put(F("n"), F("1"));
+  t->verify(sdStorage.save(F("file9.dat"), &dtoB, txn), F("Save of file9 failed"));
+
+  StreamableDTO dtoA2;
+  t->verify(sdStorage.load(F("file8.dat"), &dtoA2, nullptr, txn), F("Reload of file8 within the transaction failed"));
+  t->verifyEqual(dtoA2.get(F("n")), F("1"), F("Reload of file8 within the transaction lost the first edit"));
+  dtoA2.put(F("n"), F("2"));
+  t->verify(sdStorage.save(F("file8.dat"), &dtoA2, txn), F("Save of file8 (edit 2) failed"));
+  IndexEntry entryA2(F("file8"), F("2"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA2, txn), F("Second index upsert (same key) failed"));
+
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+
+  StreamableDTO finalA;
+  t->verify(sdStorage.load(F("file8.dat"), &finalA), F("Final load of file8 failed"));
+  t->verifyEqual(finalA.get(F("n")), F("2"), F("Committed file8 does not reflect both edits"));
+  StreamableDTO finalB;
+  t->verify(sdStorage.load(F("file9.dat"), &finalB), F("Final load of file9 failed"));
+  t->verifyEqual(finalB.get(F("n")), F("1"), F("Committed file9 is incorrect"));
+  char buf[10];
+  t->verify(sdStorage.idxLookup(myIdx, "file8", buf, 10), F("Index lookup failed"));
+  t->verifyEqual(buf, F("2"), F("Index does not reflect the second upsert"));
+
+  // cleanup
+  t->verify(sdFat->remove(F("/TESTROOT/~IDX/idx6.idx")), F("Erase failed"));
+  t->verify(sdStorage.erase(F("file8.dat")), F("Erase failed"));
+  t->verify(sdStorage.erase(F("file9.dat")), F("Erase failed"));
+}
+
 void testFsck(TestInvocation* t) {
   t->setName(F("Filesystem check and repair (fsck)"));
   t->verify(beginSuccess, F("SKIPPED"));
