@@ -153,6 +153,19 @@ char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename,
   return tmpFilename;
 }
 
+char* TransactionManager::getReadSource(Transaction* txn, const char* filename, void* testState, bool isPmem = false) {
+  char* tmpFilename = txn->getTmpFilename(filename, isPmem);
+  if (!tmpFilename || strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
+    return nullptr;
+  }
+  if (_storageProvider->_exists(tmpFilename, testState)) {
+    // An earlier edit in this transaction already staged content here -
+    // that's now the source of truth, not the original file.
+    return tmpFilename;
+  }
+  return const_cast<char*>(filename);
+}
+
 bool TransactionManager::finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState) {
   if (autoCommit) {
     if (success) {

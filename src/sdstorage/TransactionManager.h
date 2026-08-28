@@ -74,6 +74,12 @@ class TransactionManager {
      */
     bool addFileToTxn(Transaction* txn, void* testState, const char* filename, bool isPmem = false);
     char* getTmpFilename(Transaction* txn, const char* filename, bool isPmem = false);
+    // Returns the file this transaction should currently read as the
+    // source of truth for `filename`: the transaction's own staged tmp
+    // file if an earlier edit in *this* transaction already wrote one,
+    // otherwise the original resolved filename. Returns nullptr if
+    // `filename` isn't part of this transaction (mirrors getTmpFilename).
+    char* getReadSource(Transaction* txn, const char* filename, void* testState, bool isPmem = false);
     void cleanupTxn(Transaction* txn, void* testState = nullptr);
     bool applyChanges(Transaction* txn, void* testState = nullptr);
     bool finalizeTxn(Transaction* txn, bool autoCommit, bool success, void* testState);

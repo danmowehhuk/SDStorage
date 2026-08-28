@@ -27,16 +27,22 @@ bool IndexManager::idxUpsert(void* testState, Index idx, IndexEntry* entry, Tran
   bool success = false;
   if (isEmpty(iTxn.tmpFilename)) {
     // Problem with transaction that was passed in - leave state.didUpsert as false
-  } else if (!_storageProvider->_exists(iTxn.idxFilename, testState)) {
-    // First write to the index
+  } else if (!_storageProvider->_exists(iTxn.readSource, testState)) {
+    // First write to the index - nothing to preserve, write straight to tmpFilename
     success = _storageProvider->_writeIndexLine(iTxn.tmpFilename, newLine, testState);
     state.didUpsert = true;
   } else {
-    success = _storageProvider->_updateIndex(iTxn.idxFilename, iTxn.tmpFilename, IndexScanFilters::idxUpsertFilter, &state, testState);
-    if (success && !state.didUpsert) {
-      // new key goes at the end
-      success = _storageProvider->_writeIndexLine(iTxn.tmpFilename, newLine, testState);
-      state.didUpsert = true;
+    char scratchFilename[FileHelper::MAX_FILENAME_LENGTH];
+    if (_getScratchFilename(iTxn.tmpFilename, scratchFilename, FileHelper::MAX_FILENAME_LENGTH)) {
+      success = _storageProvider->_updateIndex(iTxn.readSource, scratchFilename, IndexScanFilters::idxUpsertFilter, &state, testState);
+      if (success && !state.didUpsert) {
+        // new key goes at the end
+        success = _storageProvider->_writeIndexLine(scratchFilename, newLine, testState);
+        state.didUpsert = true;
+      }
+      if (success) {
+        success = _swapIntoPlace(scratchFilename, iTxn.tmpFilename, testState);
+      }
     }
   }
   iTxn.success = (success & state.didUpsert);
@@ -235,6 +241,25 @@ IndexManager::IndexTransaction IndexManager::_makeIndexTransaction(void* testSta
     idxTxn.txn = txn;
   }
   idxTxn.tmpFilename = _txnManager->getTmpFilename(idxTxn.txn, idxTxn.idxFilename);
+  idxTxn.readSource = _txnManager->getReadSource(idxTxn.txn, idxTxn.idxFilename, testState);
   return idxTxn;
+}
+
+bool IndexManager::_getScratchFilename(const char* tmpFilename, char* buffer, size_t bufferSize) {
+  size_t len = strlen(tmpFilename);
+  // tmpFilename always ends in ".tmp" (see Transaction::add / _SDSTORAGE_TXN_TMP_EXTSN)
+  if (len < 4 || len + 1 > bufferSize) return false;
+  memcpy(buffer, tmpFilename, len + 1); // include the null terminator
+  buffer[len - 3] = 't';
+  buffer[len - 2] = 'm';
+  buffer[len - 1] = '2';
+  return true;
+}
+
+bool IndexManager::_swapIntoPlace(const char* scratchFilename, const char* tmpFilename, void* testState) {
+  if (_storageProvider->_exists(tmpFilename, testState)) {
+    if (!_storageProvider->_remove(tmpFilename, testState)) return false;
+  }
+  return _storageProvider->_rename(scratchFilename, tmpFilename, testState);
 }
 

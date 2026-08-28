@@ -389,13 +389,14 @@ void testIdxUpsert_firstEntryWithTxn(TestInvocation *t) {
   ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
   ts.onExistsReturn[1] = true; // /TESTROOT/~IDX dir exists
   ts.onIsDirectoryReturn = true; // /TESTROOT/~IDX is a directory
-  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[3] = false; // myIndex.idx doesn't exist (write first line)
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet (beginTxn's guard)
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[3] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[4] = false; // idxUpsert: readSource (original) doesn't exist -> first write
   IndexEntry entry(F("fan"), F("1"));
   t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry, txn), F("First entry insert failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("fan=1\n"), F("Unexpected first index entry written"));
@@ -414,12 +415,14 @@ void testIdxUpsert_firstLine(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
   ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
   ts.onReadIdxData = strdup(F("fan=1\n"));
   IndexEntry entry1(F("ear"), F("6"));
   t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert first line failed"));
@@ -434,12 +437,14 @@ void testIdxUpsert_betweenLines(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
   ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
   ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
   IndexEntry entry1(F("egg"), F("12"));
   t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert between lines failed"));
@@ -454,12 +459,14 @@ void testIdxUpsert_lastLine(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
   ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
   ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
   IndexEntry entry1(F("gum"), F("3"));
   t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Insert last line failed"));
@@ -474,18 +481,86 @@ void testIdxUpsert_updateLine(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
   ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
   ts.onReadIdxData = strdup(F("ear=6\nfan=1\n"));
   IndexEntry entry1(F("fan"), F("3"));
   t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Update index entry failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=3\n"), F("Unexpected index data after update entry"));
 
   ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_repeatedInSameTxn(TestInvocation *t) {
+  t->setName(F("Index upsert - repeated in same transaction must not lose or duplicate the earlier upsert"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet (beginTxn's guard)
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[3] = false; // getReadSource (1st upsert): tmp doesn't exist -> readSource = original
+  ts.onExistsReturn[4] = false; // idxUpsert (1st upsert): readSource doesn't exist -> first-write path
+  IndexEntry entry1(F("fan"), F("1"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("First upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("fan=1\n"), F("Unexpected content after first upsert"));
+  ts.writeIdxDataCaptor.reset();
+
+  ts.onExistsReturn[5] = true; // getReadSource (2nd upsert): tmp now holds the 1st upsert -> readSource = tmp
+  ts.onExistsReturn[6] = true; // idxUpsert (2nd upsert): readSource (tmp) exists -> stage+swap path
+  ts.onExistsReturn[7] = true; // _swapIntoPlace: prior tmp exists -> remove it before renaming scratch into place
+  ts.onRemoveReturn = true;
+  ts.onRenameReturn = true;
+  ts.onReadIdxData = strdup(F("fan=1\n")); // what the staged tmp file (now readSource) actually holds
+  IndexEntry entry2(F("ear"), F("6"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry2, txn), F("Second upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\n"), F("Second upsert lost or duplicated the first entry"));
+  t->verify(endsWith(ts.readIdxFilenameCaptor, F(".tmp")), F("Second upsert should have read this transaction's own staged tmp file, not the original"));
+  t->verify(endsWith(ts.renameOldCaptor, F(".tm2")), F("Expected the scratch file to be renamed into place"));
+  t->verify(endsWith(ts.renameNewCaptor, F(".tmp")), F("Expected the scratch file to replace the staged tmp file"));
+
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_sameKeyTwiceBeforeIndexExists(TestInvocation *t) {
+  t->setName(F("Index upsert - same key twice before the index exists must not produce a duplicate line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet (beginTxn's guard)
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[3] = false; // getReadSource (1st upsert): tmp doesn't exist -> readSource = original
+  ts.onExistsReturn[4] = false; // idxUpsert (1st upsert): readSource doesn't exist -> first-write path
+  IndexEntry entry1(F("fan"), F("1"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("First upsert failed"));
+  ts.writeIdxDataCaptor.reset();
+
+  ts.onExistsReturn[5] = true; // getReadSource (2nd upsert, same key): tmp now holds "fan=1" -> readSource = tmp
+  ts.onExistsReturn[6] = true; // idxUpsert (2nd upsert): readSource (tmp) exists -> stage+swap path (runs the dedupe filter)
+  ts.onExistsReturn[7] = true; // _swapIntoPlace: prior tmp exists -> remove before renaming scratch into place
+  ts.onRemoveReturn = true;
+  ts.onRenameReturn = true;
+  ts.onReadIdxData = strdup(F("fan=1\n"));
+  IndexEntry entry2(F("fan"), F("2"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry2, txn), F("Second upsert (same key) failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("fan=2\n"), F("Upserting the same key twice before the index exists produced a duplicate line"));
+
   sdStorage->abortTxn(txn, &ts);
 }
 
@@ -714,6 +789,8 @@ void setup() {
     testIdxUpsert_betweenLines,
     testIdxUpsert_lastLine,
     testIdxUpsert_updateLine,
+    testIdxUpsert_repeatedInSameTxn,
+    testIdxUpsert_sameKeyTwiceBeforeIndexExists,
     testIdxRemove,
     testIdxRenameKey_happyPath,
     testIdxRenameKey_keyDoesntExist,
