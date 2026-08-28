@@ -567,19 +567,52 @@ void testIdxUpsert_sameKeyTwiceBeforeIndexExists(TestInvocation *t) {
 void testIdxRemove(TestInvocation *t) {
   t->setName(F("Index remove"));
   MockSdFat::TestState ts;
-  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[0] = true;  // myIndex.idx exists for txn
   ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
-  ts.onExistsReturn[2] = true; // myIndex.idx exists for index upsert
 
   Index myIdx(F("myIndex"));
   Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
   t->verify(txn, F("Create transaction failed"));
 
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original index file
+  ts.onExistsReturn[3] = true;  // idxRemove: readSource (original) exists -> proceed
+  ts.onExistsReturn[4] = false; // _swapIntoPlace: no prior tmp to remove - this is the first write
+  ts.onRenameReturn = true;     // scratch file renamed into place as the staged tmp file
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
   t->verify(sdStorage->idxRemove(&ts, myIdx, F("ear"), txn), F("Remove key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("egg=45\nfan=1\n"), F("Unexpected index data after remove key"));
 
   ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxRemove_keyAddedEarlierInSameTxn(TestInvocation *t) {
+  t->setName(F("Index remove of a key upserted earlier in the same open transaction"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet (beginTxn's guard)
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[3] = false; // getReadSource (upsert): tmp doesn't exist -> readSource = original
+  ts.onExistsReturn[4] = false; // idxUpsert: readSource doesn't exist -> first-write path
+  IndexEntry entry(F("ear"), F("3"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry, txn), F("Upsert failed"));
+  ts.writeIdxDataCaptor.reset();
+
+  ts.onExistsReturn[5] = true; // getReadSource (remove): tmp now holds the upsert -> readSource = tmp
+  ts.onExistsReturn[6] = true; // idxRemove: readSource (tmp) exists -> proceed
+  ts.onExistsReturn[7] = true; // _swapIntoPlace: prior tmp exists -> remove before renaming scratch into place
+  ts.onRemoveReturn = true;
+  ts.onRenameReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\n")); // what the staged tmp file (now readSource) actually holds
+  t->verify(sdStorage->idxRemove(&ts, myIdx, F("ear"), txn), F("Remove of the just-upserted key failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F(""), F("Key added earlier in this same transaction was not removed"));
+
   sdStorage->abortTxn(txn, &ts);
 }
 
@@ -792,6 +825,7 @@ void setup() {
     testIdxUpsert_repeatedInSameTxn,
     testIdxUpsert_sameKeyTwiceBeforeIndexExists,
     testIdxRemove,
+    testIdxRemove_keyAddedEarlierInSameTxn,
     testIdxRenameKey_happyPath,
     testIdxRenameKey_keyDoesntExist,
     testIdxLookup,

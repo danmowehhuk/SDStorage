@@ -65,8 +65,12 @@ bool IndexManager::idxRemove(void* testState, Index idx, const char* key, Transa
 
   IndexScanFilters::IdxScanCapture state(key);
   bool success = false;
-  if (!isEmpty(iTxn.tmpFilename) && _storageProvider->_exists(iTxn.idxFilename, testState)) {
-    success = _storageProvider->_updateIndex(iTxn.idxFilename, iTxn.tmpFilename, IndexScanFilters::idxRemoveFilter, &state, testState);
+  if (!isEmpty(iTxn.tmpFilename) && _storageProvider->_exists(iTxn.readSource, testState)) {
+    char scratchFilename[FileHelper::MAX_FILENAME_LENGTH];
+    if (_getScratchFilename(iTxn.tmpFilename, scratchFilename, FileHelper::MAX_FILENAME_LENGTH)) {
+      success = _storageProvider->_updateIndex(iTxn.readSource, scratchFilename, IndexScanFilters::idxRemoveFilter, &state, testState);
+      if (success) success = _swapIntoPlace(scratchFilename, iTxn.tmpFilename, testState);
+    }
   }
   iTxn.success = (success & state.didRemove);
   return _txnManager->finalizeTxn(iTxn.txn, iTxn.isImplicitTxn, iTxn.success, testState);
