@@ -8,6 +8,7 @@
 #include "Strings.h"
 #include "Transaction.h"
 #include "TransactionManager.h"
+#include <stdint.h>
 
 
 using namespace sdstorage;
@@ -35,6 +36,9 @@ class SequenceManager {
 
     uint64_t current(Sequence seq, void* testState = nullptr);
     uint64_t next(void* testState, Sequence seq, Transaction* txn = nullptr);
+
+    bool current(Sequence seq, char* out, SeqToString f, void* testState = nullptr);
+    bool next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr);
 
     friend class SDStorage;
     friend class SDStorageTestHelper;

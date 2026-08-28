@@ -425,6 +425,47 @@ void testSeqNext_overflowCallsErrFunction(TestInvocation* t) {
   t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
 }
 
+bool toDecimalString(uint64_t value, char* out) {
+  return uint64ToString(value, out, 21); // 20 digits + null terminator
+}
+
+void testSeqCurrent_stringify(TestInvocation* t) {
+  t->setName(F("Sequence current() - stringify overload"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=42\n"));
+
+  char out[21];
+  t->verify(helper.seqCurrentStrRaw(sdStorage, Sequence(F("mySeq")), out, toDecimalString, &ts), F("seqCurrent stringify failed"));
+  t->verifyEqual(out, F("42"));
+}
+
+void testSeqNext_stringify(TestInvocation* t) {
+  t->setName(F("Sequence next() - stringify overload"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false;
+  ts.onExistsReturn[1] = false;
+  ts.onExistsReturn[2] = true;
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[3] = false;
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  char out[21];
+  t->verify(helper.seqNextStrRaw(sdStorage, &ts, Sequence(F("mySeq")), out, toDecimalString), F("seqNext stringify failed"));
+  t->verifyEqual(out, F("1"));
+}
+
+void testSeqNext_stringify_overflowFails(TestInvocation* t) {
+  t->setName(F("Sequence next() - stringify overload returns false on overflow"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=18446744073709551615\n"));
+
+  char out[21];
+  t->verify(!helper.seqNextStrRaw(sdStorage, &ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
+}
+
 void testToIndexLine(TestInvocation* t) {
   t->setName(F("Convert IndexEntry to chars"));
   char line[64];
@@ -808,6 +849,9 @@ void setup() {
     testSeqNext_firstValueNoTxn,
     testSeqNext_incrementsExistingValue,
     testSeqNext_overflowCallsErrFunction,
+    testSeqCurrent_stringify,
+    testSeqNext_stringify,
+    testSeqNext_stringify_overflowFails,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,

@@ -75,3 +75,15 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
   bool committed = _txnManager->finalizeTxn(txn, isImplicitTxn, success, testState);
   return (success && committed) ? nextVal : 0;
 }
+
+bool SequenceManager::current(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
+  if (!out || !f) return false;
+  return f(current(seq, testState), out);
+}
+
+bool SequenceManager::next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+  if (!out || !f) return false;
+  uint64_t val = next(testState, seq, txn);
+  if (val == 0) return false;
+  return f(val, out);
+}
