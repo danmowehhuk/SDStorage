@@ -94,19 +94,19 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
   bool success = false;
   IndexScanFilters::IdxScanCapture lookupState(oldKey);
   IndexScanFilters::IdxScanCapture state(oldKey, newKey, true);
-  success = _idxScan(iTxn.idxFilename, &lookupState, testState);
+  success = _idxScan(iTxn.readSource, &lookupState, testState);
 
   if (!success) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxRename - index scan failed"));
-#endif    
+#endif
   } else {
     if (!lookupState.keyExists) {
 #if (defined(DEBUG))
       SDStorageHal::print(F("Key to rename '"));
       SDStorageHal::print(oldKey);
       SDStorageHal::print(F("' not in "));
-      SDStorageHal::println(iTxn.idxFilename);
+      SDStorageHal::println(iTxn.readSource);
 #endif
     }
 
@@ -114,7 +114,13 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
       if (state.value) free(state.value);
       state.value = nullptr;
       state.value = strdup(lookupState.value);
-      success = _storageProvider->_updateIndex(iTxn.idxFilename, iTxn.tmpFilename, IndexScanFilters::idxRenameFilter, &state, testState);
+      char scratchFilename[FileHelper::MAX_FILENAME_LENGTH];
+      if (_getScratchFilename(iTxn.tmpFilename, scratchFilename, FileHelper::MAX_FILENAME_LENGTH)) {
+        success = _storageProvider->_updateIndex(iTxn.readSource, scratchFilename, IndexScanFilters::idxRenameFilter, &state, testState);
+        if (success) success = _swapIntoPlace(scratchFilename, iTxn.tmpFilename, testState);
+      } else {
+        success = false;
+      }
     }
   }
   iTxn.success = (success && state.didRemove && state.didInsert);

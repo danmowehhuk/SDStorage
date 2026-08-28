@@ -628,11 +628,12 @@ void testIdxRenameKey_happyPath(TestInvocation *t) {
 
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onRenameReturn = true; // idxRename's scratch-file swap now renames into place
+  ts.onRemoveReturn = true; // ...and removes any previously-staged tmp file first
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
   t->verify(sdStorage->idxRename(&ts, myIdx, F("egg"), F("bag"), txn), F("Rename key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=45\near=3\nfan=1\n"), F("Unexpected index data after rename key"));
 
-  ts.onRemoveReturn = true;
   t->verify(txn, F("txn is null"));
   t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
 }
@@ -656,6 +657,45 @@ void testIdxRenameKey_keyDoesntExist(TestInvocation *t) {
   ts.onRemoveReturn = true;
   t->verify(txn, F("txn is null"));
   t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxRenameKey_addedEarlierInSameTxn(TestInvocation *t) {
+  t->setName(F("Rename a key upserted earlier in the same open transaction"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // myIndex.idx doesn't exist yet (new index)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~IDX dir exists
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // myIndex's tmp file doesn't exist yet (beginTxn's guard)
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[3] = false; // getReadSource (upsert egg): tmp doesn't exist -> readSource = original
+  ts.onExistsReturn[4] = false; // idxUpsert: readSource doesn't exist -> first-write path
+  IndexEntry entry1(F("egg"), F("45"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("First upsert failed"));
+  ts.writeIdxDataCaptor.reset();
+
+  ts.onExistsReturn[5] = true; // getReadSource (upsert fan): tmp holds "egg=45" -> readSource = tmp
+  ts.onExistsReturn[6] = true; // idxUpsert: readSource (tmp) exists -> stage+swap path
+  ts.onExistsReturn[7] = true; // _swapIntoPlace: prior tmp exists -> remove before renaming scratch into place
+  ts.onRemoveReturn = true;
+  ts.onRenameReturn = true;
+  ts.onReadIdxData = strdup(F("egg=45\n"));
+  IndexEntry entry2(F("fan"), F("1"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry2, txn), F("Second upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("egg=45\nfan=1\n"), F("Unexpected content after second upsert"));
+  ts.writeIdxDataCaptor.reset();
+
+  ts.onExistsReturn[8] = true;  // getReadSource (rename): tmp holds "egg=45\nfan=1" -> readSource = tmp
+  ts.onExistsReturn[9] = true;  // _idxScan's own exists() check on readSource (tmp)
+  ts.onExistsReturn[10] = true; // _swapIntoPlace: prior tmp exists -> remove before renaming scratch into place
+  ts.onReadIdxData = strdup(F("egg=45\nfan=1\n"));
+  t->verify(sdStorage->idxRename(&ts, myIdx, F("egg"), F("bag"), txn), F("Rename of the just-upserted key failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=45\nfan=1\n"), F("Key added earlier in this transaction was not renamed correctly"));
+
+  sdStorage->abortTxn(txn, &ts);
 }
 
 void testIdxLookup(TestInvocation *t) {
@@ -828,6 +868,7 @@ void setup() {
     testIdxRemove_keyAddedEarlierInSameTxn,
     testIdxRenameKey_happyPath,
     testIdxRenameKey_keyDoesntExist,
+    testIdxRenameKey_addedEarlierInSameTxn,
     testIdxLookup,
     testIdxHasKey,
     testIdxSearchResults,
