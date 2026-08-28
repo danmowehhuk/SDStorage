@@ -9,6 +9,12 @@
 # SimulIDE accepts. The avr-objcopy path is extracted from the verbose compiler
 # output, so it is always the correct binary for the toolchain and MCU in use.
 
+# Always point --library at this exact script's own containing library
+# root, whether that's the main checkout or a git worktree - arduino-cli
+# otherwise silently resolves the library from ~/Arduino/libraries/<name>
+# instead of this copy when compiling from a worktree.
+LIBRARY_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+
 SIM_MODE=false
 while getopts "s" opt; do
   case $opt in
@@ -17,6 +23,7 @@ while getopts "s" opt; do
 done
 
 COMPILE_CMD="arduino-cli compile -e -b arduino:avr:mega \
+  --library \"$LIBRARY_ROOT\" \
   --libraries ~/Arduino/libraries \
   --build-property build.extra_flags=\"-DDEBUG -D__SDSTORAGE_TEST\""
 
