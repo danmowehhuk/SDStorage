@@ -49,22 +49,27 @@ bool SDStorage::begin(void* testState) {
  * Populates the DTO with data read from a file (after prepending the root dir
  * on the filename if necessary)
  */
-bool SDStorage::load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr) {
+bool SDStorage::load(const char* filename, StreamableDTO* dto, bool isFilenamePmem = false, void* testState = nullptr, Transaction* txn = nullptr) {
   FileHelper::Filename fname(filename, isFilenamePmem);
   char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   bool result = false;
   do {
     if (!_fileHelper.canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
-    if (_storageProvider._exists(resolvedFilename, testState)) {
-      if (!_storageProvider._loadFromStream(resolvedFilename, dto, testState)) break;
+    const char* readSource = resolvedFilename;
+    if (txn != nullptr) {
+      char* staged = _txnManager->getReadSource(txn, resolvedFilename, testState);
+      if (staged) readSource = staged;
+    }
+    if (_storageProvider._exists(readSource, testState)) {
+      if (!_storageProvider._loadFromStream(readSource, dto, testState)) break;
     }
     result = true;
   } while (false);
   return result;
 }
 
-bool SDStorage::load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr) {
-  return load(reinterpret_cast<const char*>(filename), dto, true, testState);
+bool SDStorage::load(const FlashStr* filename, StreamableDTO* dto, void* testState = nullptr, Transaction* txn = nullptr) {
+  return load(reinterpret_cast<const char*>(filename), dto, true, testState, txn);
 }
 
 /*

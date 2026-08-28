@@ -307,6 +307,27 @@ void testLoadFile(TestInvocation* t) {
   t->verifyEqual(dto.get(F("foo")), F("bar"));
 }
 
+void testLoadFile_withTxn_readsStagedEdit(TestInvocation* t) {
+  t->setName(F("Load with an open transaction reads this transaction's staged edit, not the original"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;  // myFile.dat exists (overwriting) - beginTxn
+  ts.onExistsReturn[1] = false; // myFile's tmp file doesn't exist yet - beginTxn's guard
+
+  Transaction* txn = sdStorage->beginTxn(&ts, F("myFile.dat"));
+  t->verify(txn, F("beginTxn failed"));
+
+  ts.onExistsReturn[2] = true; // getReadSource: staged tmp file exists (written earlier in this txn)
+  ts.onExistsReturn[3] = true; // load's own exists() check on the resolved readSource (the tmp file)
+  ts.onLoadData = strdup(F("foo=bar\n"));
+  StreamableDTO dto;
+  t->verify(sdStorage->load(F("myFile.dat"), &dto, &ts, txn), F("Load with txn failed"));
+  t->verifyEqual(dto.get(F("foo")), F("bar"));
+  t->verify(endsWith(ts.loadFilenameCaptor, F(".tmp")), F("Should have loaded from this transaction's staged tmp file, not the original"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
 void testSaveFile_noTxn(TestInvocation* t) {
   t->setName(F("Save a file without a transaction"));
   MockSdFat::TestState ts;
@@ -852,6 +873,7 @@ void setup() {
     testCommitTransaction_happyPath,
     testCommitTransaction_failure,
     testLoadFile,
+    testLoadFile_withTxn_readsStagedEdit,
     testSaveFile_noTxn,
     testIdxFilename,
     testParseIndexEntry,
