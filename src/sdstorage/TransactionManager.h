@@ -89,6 +89,7 @@ class TransactionManager {
 
     friend class SDStorage;
     friend class IndexManager;
+    friend class SequenceManager;
 
 };
 
