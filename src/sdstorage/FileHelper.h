@@ -3,11 +3,14 @@
 
 
 #include "../Index.h"
+#include "../Sequence.h"
 #include "../hal/FlashStr.h"
 
 static const char _SDSTORAGE_WORK_DIR[]          PROGMEM = "~WORK";
 static const char _SDSTORAGE_IDX_DIR[]           PROGMEM = "~IDX";
 static const char _SDSTORAGE_INDEX_EXTSN[]       PROGMEM = ".idx";
+static const char _SDSTORAGE_SEQ_DIR[]           PROGMEM = "~SEQ";
+static const char _SDSTORAGE_SEQ_EXTSN[]         PROGMEM = ".seq";
 
 class FileHelper {
 
@@ -27,10 +30,12 @@ class FileHelper {
     char* _rootDir = nullptr;
     char* _workDir = nullptr;
     char* _idxDir = nullptr;
+    char* _seqDir = nullptr;
 
     const char* getRootDir() { return _rootDir; };
     const char* getWorkDir() { return _workDir; };
     const char* getIdxDir() { return _idxDir; };
+    const char* getSeqDir() { return _seqDir; };
 
     class Filename {
       public:
@@ -58,6 +63,11 @@ class FileHelper {
     bool indexFilename(sdstorage::Index idx, char* buffer, size_t bufferSize);
 
     /*
+     * Returns the fully-qualified filename of the given sequence.
+     */
+    bool sequenceFilename(sdstorage::Sequence seq, char* buffer, size_t bufferSize);
+
+    /*
      * Various filename helpers
      */
     static bool isValidFAT16Filename(const char* filename);
@@ -69,6 +79,7 @@ class FileHelper {
     friend class IndexManager;
     friend class SDStorage;
     friend class SDStorageTestHelper;
+    friend class SequenceManager;
     friend class Transaction;
     friend class TransactionManager;
 

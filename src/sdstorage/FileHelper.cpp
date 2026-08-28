@@ -28,6 +28,8 @@ FileHelper::FileHelper(const char* rootDir, bool isRootDirPmem) {
   if (result) _idxDir = strdup(buffer);
   result &= canonicalFilename(Filename::fromProgmem(_SDSTORAGE_WORK_DIR), buffer, MAX_FILENAME_LENGTH);
   if (result) _workDir = strdup(buffer);
+  result &= canonicalFilename(Filename::fromProgmem(_SDSTORAGE_SEQ_DIR), buffer, MAX_FILENAME_LENGTH);
+  if (result) _seqDir = strdup(buffer);
 #if (defined(DEBUG))
   if (!result) {
     SDStorageHal::println(F("FileHelper initialization failed"));
@@ -39,9 +41,11 @@ FileHelper::~FileHelper() {
   if (_rootDir) free(_rootDir);
   if (_workDir) free(_workDir);
   if (_idxDir) free(_idxDir);
+  if (_seqDir) free(_seqDir);
   _rootDir = nullptr;
   _workDir = nullptr;
   _idxDir = nullptr;
+  _seqDir = nullptr;
 }
 
 /*
@@ -195,6 +199,24 @@ bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t buffer
   }
   free(extRAM);
   free(idxNameRAM);
+  return success;
+}
+
+bool FileHelper::sequenceFilename(sdstorage::Sequence seq, char* buffer, size_t bufferSize) {
+  if (!seq.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
+
+  char* extRAM = strdup_P(_SDSTORAGE_SEQ_EXTSN);
+  char* seqNameRAM = seq.isPmem ? strdup_P(seq.name) : strdup(seq.name);
+  char* seqDir = getSeqDir();
+  static const char fmt[] PROGMEM = "%s/%s%s";
+  int n = snprintf_P(buffer, bufferSize, fmt, seqDir, seqNameRAM, extRAM);
+  bool success = true;
+  if (n < 0 || static_cast<size_t>(n) >= bufferSize) {
+    buffer[bufferSize - 1] = '\0';
+    success = false;
+  }
+  free(extRAM);
+  free(seqNameRAM);
   return success;
 }
 

@@ -33,7 +33,10 @@ bool SDStorage::begin(void* testState) {
     } 
     if (!_storageProvider._exists(_fileHelper.getWorkDir(), testState)) {
       if (!_storageProvider._mkdir(_fileHelper.getWorkDir(), testState)) break;
-    } 
+    }
+    if (!_storageProvider._exists(_fileHelper.getSeqDir(), testState)) {
+      if (!_storageProvider._mkdir(_fileHelper.getSeqDir(), testState)) break;
+    }
     if (!fsck()) {
 #if defined(DEBUG)
       SDStorageHal::println(F("SDStorage repair failed"));

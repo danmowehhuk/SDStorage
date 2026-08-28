@@ -24,6 +24,7 @@ void before() {
     ts.onExistsReturn[0] = false; // root exists?
     ts.onExistsReturn[1] = false; // workdir exists?
     ts.onExistsReturn[2] = false; // idx dir exists?
+    ts.onExistsReturn[3] = false; // seq dir exists?
     beginSuccess = sdStorage->begin(&ts);
   }
 }
@@ -34,6 +35,7 @@ void testBegin(TestInvocation* t) {
   t->verifyEqual(helper.getRootDir(sdStorage), F("/TESTROOT"));
   t->verifyEqual(helper.getWorkDir(sdStorage), F("/TESTROOT/~WORK"));
   t->verifyEqual(helper.getIdxDir(sdStorage), F("/TESTROOT/~IDX"));
+  t->verifyEqual(helper.getSeqDir(sdStorage), F("/TESTROOT/~SEQ"));
 }
 
 void testConstructor(TestInvocation* t) {
@@ -348,9 +350,17 @@ void testSaveFile_noTxn(TestInvocation* t) {
 void testIdxFilename(TestInvocation* t) {
   t->setName(F("Index filename"));
   char idxFilename[64];
-  t->verify(helper.getIndexFilename(sdStorage, Index(F("foo")), idxFilename, 64), 
+  t->verify(helper.getIndexFilename(sdStorage, Index(F("foo")), idxFilename, 64),
         F("getIndexFilename returned false"));
   t->verifyEqual(idxFilename, F("/TESTROOT/~IDX/foo.idx"), F("Incorrect index filename"));
+}
+
+void testSequenceFilename(TestInvocation* t) {
+  t->setName(F("Sequence filename"));
+  char seqFilename[64];
+  t->verify(helper.getSequenceFilename(sdStorage, sdstorage::Sequence(F("foo")), seqFilename, 64),
+        F("getSequenceFilename returned false"));
+  t->verifyEqual(seqFilename, F("/TESTROOT/~SEQ/foo.seq"));
 }
 
 void testToIndexLine(TestInvocation* t) {
@@ -730,6 +740,7 @@ void setup() {
     testLoadFile,
     testSaveFile_noTxn,
     testIdxFilename,
+    testSequenceFilename,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,
