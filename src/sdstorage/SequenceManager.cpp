@@ -68,41 +68,30 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
   char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->sequenceFilename(seq, seqFilename, FileHelper::MAX_FILENAME_LENGTH)) return 0;
 
-  // If a prior next() call already ran on this same still-open explicit
-  // transaction, its result is sitting unread in the txn's tmp file - the
-  // committed file hasn't changed yet. Read that pending value instead of
-  // current()'s committed value, or a second call on the same txn would
-  // silently return the same value twice.
-  uint64_t curr = 0;
-  bool usedPendingTxnValue = false;
+  // If a prior next()/init() call already ran on this same still-open
+  // explicit transaction, its result is sitting unread in the txn's tmp
+  // file - the committed file hasn't changed yet. getReadSource() returns
+  // that staged tmp file instead of the committed one whenever it already
+  // exists, so a second next() call on the same txn reads its own prior
+  // result instead of silently returning the same value twice.
+  const char* readSource = seqFilename;
   if (txn != nullptr) {
-    char* pendingTmpFilename = _txnManager->getTmpFilename(txn, seqFilename);
-    if (!isEmpty(pendingTmpFilename) && _storageProvider->_exists(pendingTmpFilename, testState)) {
-      SequenceValue pendingVal;
-      bool loadedOk = _storageProvider->_loadFromStream(pendingTmpFilename, &pendingVal, testState);
-      if (!loadedOk || pendingVal.value == 0) {
-        // The txn's own pending tmp file exists but couldn't be read, or
-        // yielded 0 - next() never writes 0, and addFileToTxn never
-        // pre-creates a placeholder, so a pending tmp file always holds a
-        // value >= 1. Treat this the same as the committed-file anomaly
-        // below rather than silently overwriting the pending value with 1.
-        if (_errFunction != nullptr) _errFunction();
-        return 0;
-      }
-      curr = pendingVal.value;
-      usedPendingTxnValue = true;
-    }
+    char* staged = _txnManager->getReadSource(txn, seqFilename, testState);
+    if (staged) readSource = staged;
   }
-  if (!usedPendingTxnValue) {
-    // Unlike the public current(), next() legitimately treats "file doesn't
-    // exist yet" as the start of a brand-new sequence (0, about to become
-    // 1) - only an existing-but-unreadable/corrupt file is an error here.
-    bool fileExists = false, anomalous = false;
-    curr = loadStoredValue(seqFilename, testState, &fileExists, &anomalous);
-    if (anomalous) {
-      if (_errFunction != nullptr) _errFunction();
-      return 0;
-    }
+  // Unlike the public current(), next() legitimately treats "file doesn't
+  // exist yet" as the start of a brand-new sequence (0, about to become
+  // 1) - only an existing-but-unreadable/corrupt file is an error here.
+  // This also covers the staged-tmp-file case above: getReadSource() only
+  // ever returns that path once it exists, so loadStoredValue() finding it
+  // unreadable or holding 0 (next()/init() never persist 0) is correctly
+  // treated as the same anomaly as a corrupt committed file, not as "start
+  // a new sequence".
+  bool fileExists = false, anomalous = false;
+  uint64_t curr = loadStoredValue(readSource, testState, &fileExists, &anomalous);
+  if (anomalous) {
+    if (_errFunction != nullptr) _errFunction();
+    return 0;
   }
   if (curr == UINT64_MAX) {
     // Incrementing would wrap to 0, risking a collision with the sequence's
