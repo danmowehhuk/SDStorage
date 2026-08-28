@@ -60,7 +60,16 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
     char* pendingTmpFilename = _txnManager->getTmpFilename(txn, seqFilename);
     if (!isEmpty(pendingTmpFilename) && _storageProvider->_exists(pendingTmpFilename, testState)) {
       SequenceValue pendingVal;
-      _storageProvider->_loadFromStream(pendingTmpFilename, &pendingVal, testState);
+      bool loadedOk = _storageProvider->_loadFromStream(pendingTmpFilename, &pendingVal, testState);
+      if (!loadedOk || pendingVal.value == 0) {
+        // The txn's own pending tmp file exists but couldn't be read, or
+        // yielded 0 - next() never writes 0, and addFileToTxn never
+        // pre-creates a placeholder, so a pending tmp file always holds a
+        // value >= 1. Treat this the same as the committed-file anomaly
+        // below rather than silently overwriting the pending value with 1.
+        if (_errFunction != nullptr) _errFunction();
+        return 0;
+      }
       curr = pendingVal.value;
       usedPendingTxnValue = true;
     }

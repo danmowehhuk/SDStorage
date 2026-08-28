@@ -561,6 +561,42 @@ void testSeqNext_withExplicitTxn_calledTwice(TestInvocation* t) {
   t->verify(sdStorage->commitTxn(txn, &ts), F("commitTxn failed"));
 }
 
+void testSeqNext_explicitTxn_pendingValueLoadFailureCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - explicit txn pending value load failure calls errFunction, does not reset"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+
+  Sequence mySeq(F("mySeq"));
+  Transaction* txn = sdStorage->beginTxn(&ts, mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // First call succeeds normally, writing "v=1\n" to the pending tmp file.
+  ts.onExistsReturn[3] = false;
+  ts.onExistsReturn[4] = false;
+  ts.onExistsReturn[5] = false;
+  uint64_t first = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(first == 1, F("Expected 1 on first call"));
+
+  // Second call: the pending tmp file exists, but its content is unparseable
+  // garbage (simulating a corrupted/failed read of the txn's own file) - this
+  // must NOT be treated as "no pending value yet", and must NOT fall through
+  // to writing 1 again.
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onLoadData = strdup(F("garbage\n"));
+  ts.writeDataCaptor.reset();
+
+  errThrown = false;
+  uint64_t second = sdStorage->seqNext(&ts, mySeq, txn);
+  t->verify(second == 0, F("Expected 0 - must not silently reset to 1"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything on the failed read"));
+}
+
 void testToIndexLine(TestInvocation* t) {
   t->setName(F("Convert IndexEntry to chars"));
   char line[64];
@@ -951,6 +987,7 @@ void setup() {
     testBeginTxn_withSequence,
     testSeqNext_withExplicitTxn,
     testSeqNext_withExplicitTxn_calledTwice,
+    testSeqNext_explicitTxn_pendingValueLoadFailureCallsErrFunction,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,
