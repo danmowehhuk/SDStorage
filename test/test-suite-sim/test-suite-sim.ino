@@ -380,6 +380,51 @@ void testSeqCurrent_existingValue(TestInvocation* t) {
   t->verify(helper.seqCurrentRaw(sdStorage, Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
 }
 
+void testSeqNext_firstValueNoTxn(TestInvocation* t) {
+  t->setName(F("Sequence next() - first value, implicit txn"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (current() load)
+  ts.onExistsReturn[1] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn)
+  ts.onExistsReturn[2] = true;  // /TESTROOT/~SEQ dir exists
+  ts.onIsDirectoryReturn = true; // /TESTROOT/~SEQ is a directory
+  ts.onExistsReturn[3] = false; // mySeq's tmp file doesn't exist yet
+  ts.onRenameReturn = true; // commit txn
+  ts.onRemoveReturn = true; // transaction cleanup
+
+  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  t->verify(result == 1, F("Expected 1 for a brand-new sequence's first next()"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
+  t->verify(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
+}
+
+void testSeqNext_incrementsExistingValue(TestInvocation* t) {
+  t->setName(F("Sequence next() - increments an existing value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("v=41\n"));
+  ts.onExistsReturn[1] = true; // mySeq.seq exists (beginTxn's addFileToTxn)
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  t->verify(result == 42, F("Expected 42"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=42\n"), F("Unexpected data written"));
+}
+
+void testSeqNext_overflowCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence next() - overflow calls errFunction, does not write"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists (current() load)
+  ts.onLoadData = strdup(F("v=18446744073709551615\n")); // UINT64_MAX
+
+  errThrown = false;
+  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  t->verify(result == 0, F("Expected 0 on overflow"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
 void testToIndexLine(TestInvocation* t) {
   t->setName(F("Convert IndexEntry to chars"));
   char line[64];
@@ -760,6 +805,9 @@ void setup() {
     testSequenceFilename,
     testSeqCurrent_notYetCreated,
     testSeqCurrent_existingValue,
+    testSeqNext_firstValueNoTxn,
+    testSeqNext_incrementsExistingValue,
+    testSeqNext_overflowCallsErrFunction,
     testParseIndexEntry,
     testToIndexLine,
     testIdxUpsert_firstEntryNoTxn,

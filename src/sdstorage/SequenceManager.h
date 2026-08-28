@@ -34,6 +34,7 @@ class SequenceManager {
     void (*_errFunction)();
 
     uint64_t current(Sequence seq, void* testState = nullptr);
+    uint64_t next(void* testState, Sequence seq, Transaction* txn = nullptr);
 
     friend class SDStorage;
     friend class SDStorageTestHelper;
