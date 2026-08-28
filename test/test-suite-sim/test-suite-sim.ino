@@ -368,7 +368,7 @@ void testSeqCurrent_notYetCreated(TestInvocation* t) {
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
 
-  t->verify(helper.seqCurrentRaw(sdStorage, Sequence(F("mySeq")), &ts) == 0, F("Expected 0 for a brand-new sequence"));
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 for a brand-new sequence"));
 }
 
 void testSeqCurrent_existingValue(TestInvocation* t) {
@@ -377,7 +377,7 @@ void testSeqCurrent_existingValue(TestInvocation* t) {
   ts.onExistsReturn[0] = true; // mySeq.seq exists
   ts.onLoadData = strdup(F("v=42\n"));
 
-  t->verify(helper.seqCurrentRaw(sdStorage, Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
 }
 
 void testSeqNext_firstValueNoTxn(TestInvocation* t) {
@@ -391,7 +391,7 @@ void testSeqNext_firstValueNoTxn(TestInvocation* t) {
   ts.onRenameReturn = true; // commit txn
   ts.onRemoveReturn = true; // transaction cleanup
 
-  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
   t->verify(result == 1, F("Expected 1 for a brand-new sequence's first next()"));
   t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
   t->verify(endsWith(ts.removeCaptor, F(".cmt")), F("Last file removed should have been .cmt file"));
@@ -407,7 +407,7 @@ void testSeqNext_incrementsExistingValue(TestInvocation* t) {
   ts.onRenameReturn = true;
   ts.onRemoveReturn = true;
 
-  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
   t->verify(result == 42, F("Expected 42"));
   t->verifyEqual(ts.writeDataCaptor.get(), F("v=42\n"), F("Unexpected data written"));
 }
@@ -419,7 +419,7 @@ void testSeqNext_overflowCallsErrFunction(TestInvocation* t) {
   ts.onLoadData = strdup(F("v=18446744073709551615\n")); // UINT64_MAX
 
   errThrown = false;
-  uint64_t result = helper.seqNextRaw(sdStorage, &ts, Sequence(F("mySeq")));
+  uint64_t result = sdStorage->seqNext(&ts, Sequence(F("mySeq")));
   t->verify(result == 0, F("Expected 0 on overflow"));
   t->verify(errThrown, F("Expected errFunction to be invoked"));
   t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
@@ -436,7 +436,7 @@ void testSeqCurrent_stringify(TestInvocation* t) {
   ts.onLoadData = strdup(F("v=42\n"));
 
   char out[21];
-  t->verify(helper.seqCurrentStrRaw(sdStorage, Sequence(F("mySeq")), out, toDecimalString, &ts), F("seqCurrent stringify failed"));
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), out, toDecimalString, &ts), F("seqCurrent stringify failed"));
   t->verifyEqual(out, F("42"));
 }
 
@@ -452,7 +452,7 @@ void testSeqNext_stringify(TestInvocation* t) {
   ts.onRemoveReturn = true;
 
   char out[21];
-  t->verify(helper.seqNextStrRaw(sdStorage, &ts, Sequence(F("mySeq")), out, toDecimalString), F("seqNext stringify failed"));
+  t->verify(sdStorage->seqNext(&ts, Sequence(F("mySeq")), out, toDecimalString), F("seqNext stringify failed"));
   t->verifyEqual(out, F("1"));
 }
 
@@ -463,7 +463,7 @@ void testSeqNext_stringify_overflowFails(TestInvocation* t) {
   ts.onLoadData = strdup(F("v=18446744073709551615\n"));
 
   char out[21];
-  t->verify(!helper.seqNextStrRaw(sdStorage, &ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
+  t->verify(!sdStorage->seqNext(&ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
 }
 
 void testBeginTxn_withSequence(TestInvocation* t) {
@@ -495,9 +495,7 @@ void testSeqNext_withExplicitTxn(TestInvocation* t) {
   // 3 already consumed above by beginTxn); it defaults to false (mySeq.seq still
   // not found), which is exactly what's needed here.
 
-  // SDStorage::seqNext isn't public until Task 7 - call SequenceManager
-  // directly through the test-only passthrough added in Task 4.
-  uint64_t result = helper.seqNextRaw(sdStorage, &ts, mySeq, txn);
+  uint64_t result = sdStorage->seqNext(&ts, mySeq, txn);
   t->verify(result == 1, F("Expected 1"));
   t->verifyEqual(ts.writeDataCaptor.get(), F("v=1\n"), F("Unexpected data written"));
 

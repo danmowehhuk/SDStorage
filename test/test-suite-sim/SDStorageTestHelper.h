@@ -65,18 +65,6 @@ class SDStorageTestHelper {
       free(l);
       return result;
     };
-    uint64_t seqCurrentRaw(SDStorage* sdStorage, sdstorage::Sequence seq, void* testState = nullptr) {
-      return sdStorage->_seqManager->current(seq, testState);
-    };
-    uint64_t seqNextRaw(SDStorage* sdStorage, void* testState, sdstorage::Sequence seq, Transaction* txn = nullptr) {
-      return sdStorage->_seqManager->next(testState, seq, txn);
-    };
-    bool seqCurrentStrRaw(SDStorage* sdStorage, sdstorage::Sequence seq, char* out, sdstorage::SeqToString f, void* testState = nullptr) {
-      return sdStorage->_seqManager->current(seq, out, f, testState);
-    };
-    bool seqNextStrRaw(SDStorage* sdStorage, void* testState, sdstorage::Sequence seq, char* out, sdstorage::SeqToString f, Transaction* txn = nullptr) {
-      return sdStorage->_seqManager->next(testState, seq, out, f, txn);
-    };
 };
 
 

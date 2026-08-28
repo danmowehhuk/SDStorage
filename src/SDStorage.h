@@ -179,6 +179,30 @@ class SDStorage {
 
 
     /*
+     * SEQUENCE OPERATIONS
+     *
+     */
+    uint64_t seqCurrent(Sequence seq, void* testState = nullptr) {
+      return _seqManager->current(seq, testState);
+    };
+    uint64_t seqNext(Sequence seq, Transaction* txn = nullptr) {
+      return seqNext(nullptr, seq, txn);
+    };
+    uint64_t seqNext(void* testState, Sequence seq, Transaction* txn = nullptr) {
+      return _seqManager->next(testState, seq, txn);
+    };
+    bool seqCurrent(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
+      return _seqManager->current(seq, out, f, testState);
+    };
+    bool seqNext(Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+      return seqNext(nullptr, seq, out, f, txn);
+    };
+    bool seqNext(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+      return _seqManager->next(testState, seq, out, f, txn);
+    };
+
+
+    /*
      * TRANSACTION OPERATIONS
      *
      * Create a new transaction, locking the affected files. Filenames may be char* or F()-strings
