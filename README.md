@@ -185,6 +185,63 @@ if (sdStorage.idxPrefixSearch(nameIndex, &results)) {
 
 For more details, see the [`search` example](/examples/search/search.ino). That sketch populates an index with sample data and demonstrates two scenarios: one where the prefix is specific enough to get a full list of results, and another where the prefix is broad (many results) triggering the trie mode behavior. The example shows how to handle both cases in your code.
 
+## Using Sequences
+
+SDStorage can also manage named, persistent counters called sequences. A sequence just tracks a `uint64_t` value on the SD card; a common use is generating unique, incrementing IDs for filenames or record keys.
+
+**Creating a Sequence:** Like an `Index`, a `Sequence` is defined with a name, which is also used as a filename under the hood (FAT16 rules apply, no extension):
+
+```cpp
+#include <Sequence.h>
+
+sdstorage::Sequence mySeq(F("my_seq"));  // create a sequence named "my_seq"
+```
+
+Defining a `Sequence` does not create or populate storage — it simply declares that the sequence exists. The first time you use it, its value starts at `0`.
+
+**Reading and Incrementing:** `seqCurrent(...)` returns the current value without changing it. `seqNext(...)` increments the value, persists it, and returns the new value:
+
+```cpp
+uint64_t id = sdStorage.seqNext(mySeq);  // 1 the first time, 2 the next, ...
+Serial.println(id);
+
+uint64_t sameId = sdStorage.seqCurrent(mySeq);  // does not increment
+```
+
+`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. If it ever returns `0`, something failed (an I/O error, or the sequence reached `UINT64_MAX` and would have wrapped back to `0`); in that case, the `errFunction` you passed to the `SDStorage` constructor is invoked, the same as any other unrecoverable SDStorage error.
+
+**Converting to a String:** If you need the sequence's value as a filename-safe string rather than a raw integer, pass a conversion function shaped like `bool (*)(uint64_t value, char* out)`:
+
+```cpp
+// avr-libc's sprintf has no 64-bit conversion, so a real converter for
+// the full uint64_t range needs a manual implementation (see
+// SDStorageStrings::uint64ToString, or RCEntities' idToFAT16 for a
+// compact base-38 FAT16-safe encoding). This one truncates to 32 bits -
+// fine for a demo, not for a sequence expected to run past ~4 billion.
+bool toDecimal(uint64_t value, char* out) {
+    return sprintf(out, "%lu", (unsigned long)value) > 0;
+}
+
+char filename[21];
+if (sdStorage.seqNext(mySeq, filename, toDecimal)) {
+    Serial.println(filename);  // e.g., "1"
+}
+```
+
+The buffer must be sized by the caller for whatever the conversion function needs — a full 64-bit decimal encoder needs up to 21 bytes, but a more compact base-N encoder could need far fewer.
+
+**Sequences and Transactions:** A `Sequence` can be included in a transaction exactly like a file or an `Index`, so you can generate an ID and save a file named with it as one atomic unit:
+
+```cpp
+Transaction* txn = sdStorage.beginTxn(mySeq, "somefile.dat");
+if (txn) {
+    uint64_t id = sdStorage.seqNext(mySeq, txn);
+    sdStorage.save("somefile.dat", &someDto, txn);
+    sdStorage.commitTxn(txn);
+}
+```
+
+For more details, see the [`sequence` example](/examples/sequence/sequence.ino).
 
 ## Transactions: Atomic Updates
 
