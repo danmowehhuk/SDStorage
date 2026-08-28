@@ -6,7 +6,11 @@
  * the SD_CS_PIN value below to whichever pin was used for the SD's
  * chip select
  */
-#define SD_CS_PIN 53
+#ifndef OVERRIDE_PINS
+  #ifndef SD_CS_PIN
+  #define SD_CS_PIN 53
+  #endif
+#endif
 
 /*
  * Root directory where SDStorage will put all the files
