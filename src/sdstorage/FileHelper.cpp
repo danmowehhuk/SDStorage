@@ -83,6 +83,22 @@ bool FileHelper::canonicalFilename(Filename filename, char* buffer, size_t buffe
     success = false;
   }
   free(filenameRAM);
+
+  if (success) {
+    // Validate as early as possible - before any transaction is opened or
+    // any file is locked - rather than waiting until a write is actually
+    // attempted. Every filename passed to save/load/exists/mkdir/erase/
+    // beginTxn resolves through here first, so this is the single choke
+    // point that catches an invalid name for all of them.
+    char shortName[MAX_FILENAME_LENGTH];
+    if (!getFilenameFromFullName(buffer, shortName, MAX_FILENAME_LENGTH) || !isValidFAT16Filename(shortName)) {
+#if (defined(DEBUG))
+      SDStorageHal::print(F("Invalid FAT16 filename: "));
+      SDStorageHal::println(buffer);
+#endif
+      success = false;
+    }
+  }
   return success;
 }
 
@@ -186,8 +202,17 @@ bool FileHelper::getFilenameFromFullName(const char* filename, char* buffer, siz
 bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t bufferSize) {
   if (!idx.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
 
-  char* extRAM = strdup_P(_SDSTORAGE_INDEX_EXTSN);
   char* idxNameRAM = idx.isPmem ? strdup_P(idx.name) : strdup(idx.name);
+  if (!isValidFAT16Filename(idxNameRAM)) {
+#if (defined(DEBUG))
+    SDStorageHal::print(F("Invalid FAT16 index name: "));
+    SDStorageHal::println(idxNameRAM);
+#endif
+    free(idxNameRAM);
+    return false;
+  }
+
+  char* extRAM = strdup_P(_SDSTORAGE_INDEX_EXTSN);
   char* idxDir = getIdxDir();
   static const char fmt[] PROGMEM = "%s/%s%s";
   int n = snprintf_P(buffer, bufferSize, fmt, idxDir, idxNameRAM, extRAM);
@@ -205,8 +230,17 @@ bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t buffer
 bool FileHelper::sequenceFilename(sdstorage::Sequence seq, char* buffer, size_t bufferSize) {
   if (!seq.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
 
-  char* extRAM = strdup_P(_SDSTORAGE_SEQ_EXTSN);
   char* seqNameRAM = seq.isPmem ? strdup_P(seq.name) : strdup(seq.name);
+  if (!isValidFAT16Filename(seqNameRAM)) {
+#if (defined(DEBUG))
+    SDStorageHal::print(F("Invalid FAT16 sequence name: "));
+    SDStorageHal::println(seqNameRAM);
+#endif
+    free(seqNameRAM);
+    return false;
+  }
+
+  char* extRAM = strdup_P(_SDSTORAGE_SEQ_EXTSN);
   char* seqDir = getSeqDir();
   static const char fmt[] PROGMEM = "%s/%s%s";
   int n = snprintf_P(buffer, bufferSize, fmt, seqDir, seqNameRAM, extRAM);
