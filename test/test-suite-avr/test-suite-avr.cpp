@@ -281,6 +281,83 @@ void testTransaction_repeatFileAndIndexEdits(TestInvocation* t) {
   sdStorage.erase(F("file5.dat"));
 }
 
+void testTransaction_repeatFileIndexAndSequenceEdits(TestInvocation* t) {
+  t->setName(F("Repeated file, index, and sequence edits, interleaved, in one transaction"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~IDX/idx3.idx");
+  f_unlink("/TESTROOT/~SEQ/seq2.seq");
+  sdStorage.erase(F("file6.dat"));
+  sdStorage.erase(F("file7.dat"));
+
+  // This is the original motivating scenario for this whole fix: a
+  // transaction spanning two files, one index, and one sequence, where
+  // the sequence is advanced twice and the index is upserted twice (once
+  // per advance) - getReadSource() has to keep every one of those staged
+  // edits straight, interleaved, in a single still-open transaction.
+  Index myIdx(F("idx3"));
+  Sequence mySeq(F("seq2"));
+  Transaction* txn = sdStorage.beginTxn(mySeq, myIdx, F("file6.dat"), F("file7.dat"));
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+
+  // First sequence advance, tagging file6 with the resulting id.
+  uint64_t seq1 = sdStorage.seqNext(mySeq, txn);
+  t->verify(seq1 == 1, F("first seqNext failed or returned the wrong value"));
+  if (!t->passed()) return;
+  StreamableDTO dtoA;
+  dtoA.put(F("seqId"), F("1"));
+  t->verify(sdStorage.save(F("file6.dat"), &dtoA, txn), F("save of file6 (edit 1) failed"));
+  if (!t->passed()) return;
+  // seq1 == 1, just asserted above - index the file by its (string) id.
+  IndexEntry entryA(F("file6"), F("1"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA, txn), F("first index upsert failed"));
+  if (!t->passed()) return;
+
+  StreamableDTO dtoB;
+  dtoB.put(F("n"), F("1"));
+  t->verify(sdStorage.save(F("file7.dat"), &dtoB, txn), F("save of file7 failed"));
+  if (!t->passed()) return;
+
+  // Second sequence advance on the same still-open transaction - must
+  // see 2, not silently repeat 1. Re-tag file6 with the new id.
+  uint64_t seq2 = sdStorage.seqNext(mySeq, txn);
+  t->verify(seq2 == 2, F("second seqNext on the same transaction failed or returned the wrong value"));
+  if (!t->passed()) return;
+  StreamableDTO dtoA2;
+  t->verify(sdStorage.load(F("file6.dat"), &dtoA2, nullptr, txn), F("reload of file6 within the transaction failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(dtoA2.get(F("seqId")), F("1"), F("reload of file6 within the transaction lost the first edit"));
+  dtoA2.put(F("seqId"), F("2"));
+  t->verify(sdStorage.save(F("file6.dat"), &dtoA2, txn), F("save of file6 (edit 2) failed"));
+  if (!t->passed()) return;
+  // seq2 == 2, just asserted above.
+  IndexEntry entryA2(F("file6"), F("2"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA2, txn), F("second index upsert (same key) failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.seqCurrent(mySeq) == 2, F("committed sequence does not reflect both advances"));
+  StreamableDTO finalA;
+  t->verify(sdStorage.load(F("file6.dat"), &finalA), F("final load of file6 failed"));
+  if (!t->passed()) return;
+  t->verifyEqual(finalA.get(F("seqId")), F("2"), F("committed file6 does not reflect both edits"));
+  StreamableDTO finalB;
+  t->verify(sdStorage.load(F("file7.dat"), &finalB), F("final load of file7 failed"));
+  t->verifyEqual(finalB.get(F("n")), F("1"), F("committed file7 is incorrect"));
+  char buf[10];
+  t->verify(sdStorage.idxLookup(myIdx, "file6", buf, 10), F("index lookup failed"));
+  t->verifyEqual(buf, F("2"), F("index does not reflect the second upsert"));
+
+  // cleanup
+  f_unlink("/TESTROOT/~IDX/idx3.idx");
+  f_unlink("/TESTROOT/~SEQ/seq2.seq");
+  sdStorage.erase(F("file6.dat"));
+  sdStorage.erase(F("file7.dat"));
+}
+
 int main() {
   Uart0::begin(9600);
   timingInit();
@@ -304,7 +381,8 @@ int main() {
     testSeqCurrentNext,
     testFsckRecoversStaleTransaction,
     testTransaction_repeatFileEdit,
-    testTransaction_repeatFileAndIndexEdits
+    testTransaction_repeatFileAndIndexEdits,
+    testTransaction_repeatFileIndexAndSequenceEdits
   };
 
   runTestSuiteShowMem(tests, before);
