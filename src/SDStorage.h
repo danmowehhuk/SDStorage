@@ -181,6 +181,13 @@ class SDStorage {
     /*
      * SEQUENCE OPERATIONS
      *
+     * A sequence must be advanced with seqNext() (or explicitly given a
+     * starting point with seqInit()) at least once before seqCurrent() is
+     * called on it - reading a sequence that has never been touched is a
+     * usage error and invokes errFunction, the same as any other
+     * unrecoverable SDStorage error. seqNext() itself has no such
+     * requirement: calling it on a brand-new sequence is exactly how a
+     * sequence gets created, and its first call always returns 1.
      */
     uint64_t seqCurrent(Sequence seq, void* testState = nullptr) {
       return _seqManager->current(seq, testState);
@@ -199,6 +206,20 @@ class SDStorage {
     };
     bool seqNext(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
       return _seqManager->next(testState, seq, out, f, txn);
+    };
+    /*
+     * Explicitly sets a sequence's starting value. Use this if a sequence
+     * needs to start somewhere other than 1 (e.g. importing existing data).
+     * initialValue must be >= 1 - 0 is reserved to mean "never initialized"
+     * throughout this API. If a sequence is never explicitly initialized,
+     * its first seqNext() call still bootstraps it to 1 automatically;
+     * seqInit() is only needed to pick a different starting point.
+     */
+    bool seqInit(Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+      return seqInit(nullptr, seq, initialValue, txn);
+    };
+    bool seqInit(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+      return _seqManager->init(testState, seq, initialValue, txn);
     };
 
 

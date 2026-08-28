@@ -322,8 +322,9 @@ void testSeqCurrentNext(TestInvocation* t) {
   if (!t->passed()) return;
   sdFat->remove("/TESTROOT/~SEQ/seq1.seq");
 
+  // A sequence must be advanced with seqNext() at least once before
+  // seqCurrent() can be called on it - reading it first is a usage error.
   Sequence mySeq(F("seq1"));
-  t->verify(sdStorage.seqCurrent(mySeq) == 0, F("Expected 0 for a brand-new sequence"));
   t->verify(sdStorage.seqNext(mySeq) == 1, F("Expected 1"));
   t->verify(sdStorage.seqNext(mySeq) == 2, F("Expected 2"));
   t->verify(sdStorage.seqCurrent(mySeq) == 2, F("current() after two next() calls should be 2"));

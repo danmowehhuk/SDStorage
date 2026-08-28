@@ -363,12 +363,14 @@ void testSequenceFilename(TestInvocation* t) {
   t->verifyEqual(seqFilename, F("/TESTROOT/~SEQ/foo.seq"));
 }
 
-void testSeqCurrent_notYetCreated(TestInvocation* t) {
-  t->setName(F("Sequence current() - not yet created"));
+void testSeqCurrent_notYetCreated_callsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence current() - reading before next()/init() calls errFunction"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
 
-  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 for a brand-new sequence"));
+  errThrown = false;
+  t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 - reading an uninitialized sequence is an error"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
 }
 
 void testSeqCurrent_existingValue(TestInvocation* t) {
@@ -378,6 +380,30 @@ void testSeqCurrent_existingValue(TestInvocation* t) {
   ts.onLoadData = strdup(F("v=42\n"));
 
   t->verify(sdStorage->seqCurrent(Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
+}
+
+void testSeqInit_happyPath(TestInvocation* t) {
+  t->setName(F("Sequence init() - sets an explicit starting value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet (beginTxn's addFileToTxn, check 1)
+  ts.onExistsReturn[1] = true;  // /TESTROOT/~SEQ dir exists (addFileToTxn, check 2)
+  ts.onIsDirectoryReturn = true;
+  ts.onExistsReturn[2] = false; // mySeq's tmp file doesn't exist yet (addFileToTxn, check 3)
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+
+  t->verify(sdStorage->seqInit(&ts, Sequence(F("mySeq")), 1000), F("seqInit failed"));
+  t->verifyEqual(ts.writeDataCaptor.get(), F("v=1000\n"), F("Unexpected data written"));
+}
+
+void testSeqInit_rejectsZero(TestInvocation* t) {
+  t->setName(F("Sequence init() - rejects an initial value of 0"));
+  MockSdFat::TestState ts;
+
+  errThrown = false;
+  t->verify(!sdStorage->seqInit(&ts, Sequence(F("mySeq")), 0), F("seqInit should have failed for initialValue=0"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
 }
 
 void testSeqNext_firstValueNoTxn(TestInvocation* t) {
@@ -975,8 +1001,10 @@ void setup() {
     testSaveFile_noTxn,
     testIdxFilename,
     testSequenceFilename,
-    testSeqCurrent_notYetCreated,
+    testSeqCurrent_notYetCreated_callsErrFunction,
     testSeqCurrent_existingValue,
+    testSeqInit_happyPath,
+    testSeqInit_rejectsZero,
     testSeqNext_firstValueNoTxn,
     testSeqNext_incrementsExistingValue,
     testSeqNext_overflowCallsErrFunction,

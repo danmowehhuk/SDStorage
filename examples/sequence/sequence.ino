@@ -51,9 +51,11 @@ void setup() {
 
   sdstorage::Sequence mySeq(F("my_seq"));
 
-  Serial.print(F("Starting value: "));
-  Serial.println((unsigned long)sdStorage.seqCurrent(mySeq));
-
+  // A sequence must be advanced with seqNext() (or given an explicit
+  // starting point with seqInit()) at least once before seqCurrent() can
+  // be called on it - reading it first is a usage error and calls
+  // errFunction. seqNext() itself has no such requirement: calling it on
+  // a brand-new sequence is exactly how a sequence gets created.
   uint64_t id1 = sdStorage.seqNext(mySeq);
   uint64_t id2 = sdStorage.seqNext(mySeq);
   Serial.print(F("First two IDs: "));
@@ -61,10 +63,21 @@ void setup() {
   Serial.print(F(", "));
   Serial.println((unsigned long)id2);
 
+  Serial.print(F("Current value: "));
+  Serial.println((unsigned long)sdStorage.seqCurrent(mySeq)); // valid now that seqNext() has run
+
   char idStr[21];
   if (sdStorage.seqNext(mySeq, idStr, toDecimal)) {
     Serial.print(F("Third ID as a string: "));
     Serial.println(idStr);
+  }
+
+  // seqInit() lets a sequence start somewhere other than 1 - useful when
+  // importing existing data. initialValue must be >= 1.
+  sdstorage::Sequence importedSeq(F("imported"));
+  if (sdStorage.seqInit(importedSeq, 1000)) {
+    Serial.print(F("Imported sequence starts at: "));
+    Serial.println((unsigned long)sdStorage.seqCurrent(importedSeq));
   }
 }
 

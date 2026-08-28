@@ -36,9 +36,17 @@ class SequenceManager {
 
     uint64_t current(Sequence seq, void* testState = nullptr);
     uint64_t next(void* testState, Sequence seq, Transaction* txn = nullptr);
+    bool init(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr);
 
     bool current(Sequence seq, char* out, SeqToString f, void* testState = nullptr);
     bool next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr);
+
+    // Loads a sequence's stored value if its file exists. Sets *fileExists
+    // to whether the file was found at all, and *anomalous if it existed
+    // but couldn't be read or parsed to a legitimate (non-zero) value.
+    // next() and init() never persist 0, so an existing file that yields 0
+    // is always corruption or a read failure, never a real stored state.
+    uint64_t loadStoredValue(const char* seqFilename, void* testState, bool* fileExists, bool* anomalous);
 
     friend class SDStorage;
     friend class SDStorageTestHelper;

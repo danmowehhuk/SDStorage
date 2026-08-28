@@ -31,16 +31,35 @@ class SequenceValue: public StreamableDTO {
     }
 };
 
+uint64_t SequenceManager::loadStoredValue(const char* seqFilename, void* testState, bool* fileExists, bool* anomalous) {
+  *fileExists = false;
+  *anomalous = false;
+  if (!_storageProvider->_exists(seqFilename, testState)) return 0;
+  *fileExists = true;
+  SequenceValue val;
+  if (!_storageProvider->_loadFromStream(seqFilename, &val, testState) || val.value == 0) {
+    *anomalous = true;
+    return 0;
+  }
+  return val.value;
+}
+
 uint64_t SequenceManager::current(Sequence seq, void* testState = nullptr) {
   if (!seq.name) return 0;
   char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->sequenceFilename(seq, seqFilename, FileHelper::MAX_FILENAME_LENGTH)) return 0;
 
-  SequenceValue val;
-  if (_storageProvider->_exists(seqFilename, testState)) {
-    if (!_storageProvider->_loadFromStream(seqFilename, &val, testState)) return 0;
+  bool fileExists = false, anomalous = false;
+  uint64_t value = loadStoredValue(seqFilename, testState, &fileExists, &anomalous);
+  if (!fileExists || anomalous) {
+    // Reading a sequence before seqNext()/init() has ever written it is a
+    // usage error, not a legitimate "starts at 0" state - only next()'s own
+    // bootstrap path (below) is allowed to treat a missing file as 0. An
+    // existing-but-unreadable/corrupt file is likewise always an error here.
+    if (_errFunction != nullptr) _errFunction();
+    return 0;
   }
-  return val.value;
+  return value;
 }
 
 uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn = nullptr) {
@@ -75,12 +94,12 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
     }
   }
   if (!usedPendingTxnValue) {
-    curr = current(seq, testState);
-    if (curr == 0 && _storageProvider->_exists(seqFilename, testState)) {
-      // The file exists but yielded 0, which next() never legitimately writes.
-      // This is a read/parse failure (or corruption), not a brand-new sequence -
-      // let the caller's errFunction decide rather than silently resetting what
-      // might have been a much larger counter.
+    // Unlike the public current(), next() legitimately treats "file doesn't
+    // exist yet" as the start of a brand-new sequence (0, about to become
+    // 1) - only an existing-but-unreadable/corrupt file is an error here.
+    bool fileExists = false, anomalous = false;
+    curr = loadStoredValue(seqFilename, testState, &fileExists, &anomalous);
+    if (anomalous) {
       if (_errFunction != nullptr) _errFunction();
       return 0;
     }
@@ -111,9 +130,41 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
   return (success && committed) ? nextVal : 0;
 }
 
+bool SequenceManager::init(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+  if (!seq.name) return false;
+  if (initialValue == 0) {
+    // 0 is reserved throughout this API to mean "never initialized" (and is
+    // never a value next()/init() legitimately persist) - an explicit
+    // initial value of 0 would be indistinguishable from that state, and
+    // from a corrupted read, on every later current()/next() call.
+    if (_errFunction != nullptr) _errFunction();
+    return false;
+  }
+  char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
+  if (!_fileHelper->sequenceFilename(seq, seqFilename, FileHelper::MAX_FILENAME_LENGTH)) return false;
+
+  bool isImplicitTxn = (txn == nullptr);
+  if (isImplicitTxn) {
+    txn = _txnManager->beginTxn(testState, seqFilename);
+  }
+  if (!txn) return false;
+
+  char* tmpFilename = _txnManager->getTmpFilename(txn, seqFilename);
+  bool success = false;
+  if (!isEmpty(tmpFilename)) {
+    SequenceValue val;
+    val.setValue(initialValue);
+    success = _storageProvider->_writeToStream(tmpFilename, &val, testState);
+  }
+  bool committed = _txnManager->finalizeTxn(txn, isImplicitTxn, success, testState);
+  return success && committed;
+}
+
 bool SequenceManager::current(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
   if (!out || !f) return false;
-  return f(current(seq, testState), out);
+  uint64_t val = current(seq, testState);
+  if (val == 0) return false; // current() already invoked errFunction on failure
+  return f(val, out);
 }
 
 bool SequenceManager::next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {

@@ -198,18 +198,29 @@ SDStorage can also manage named, persistent counters called sequences. A sequenc
 sdstorage::Sequence mySeq(F("my_seq"));  // create a sequence named "my_seq"
 ```
 
-Defining a `Sequence` does not create or populate storage — it simply declares that the sequence exists. The first time you use it, its value starts at `0`.
+Defining a `Sequence` does not create or populate storage — it simply declares that the sequence exists. A `Sequence` must be advanced with `seqNext(...)` (or given an explicit starting point with `seqInit(...)`, below) at least once before `seqCurrent(...)` can be called on it — reading a sequence that has never been touched is a usage error, not a legitimate "starts at 0" state.
 
-**Reading and Incrementing:** `seqCurrent(...)` returns the current value without changing it. `seqNext(...)` increments the value, persists it, and returns the new value:
+**Reading and Incrementing:** `seqNext(...)` increments the value, persists it, and returns the new value — calling it on a brand-new sequence is exactly how a sequence gets created, and its first call always returns `1`. `seqCurrent(...)` returns the current value without changing it, but only once the sequence has been advanced at least once:
 
 ```cpp
 uint64_t id = sdStorage.seqNext(mySeq);  // 1 the first time, 2 the next, ...
 Serial.println(id);
 
-uint64_t sameId = sdStorage.seqCurrent(mySeq);  // does not increment
+uint64_t sameId = sdStorage.seqCurrent(mySeq);  // does not increment; valid now that seqNext() has run
 ```
 
-`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. A `0` return always means something failed, but not every failure invokes the `errFunction` you passed to the `SDStorage` constructor: it's invoked only when the sequence reached `UINT64_MAX` and would have wrapped back to `0`, or when an existing sequence file could not be read or parsed (a corrupt or unreadable file). Other `0`-returning failures — e.g. an invalid sequence filename, or a sequence that isn't part of the transaction it was given — fail without invoking `errFunction`.
+`seqNext(...)` never returns `0` on success — a successful call always returns a value of `1` or greater. A `0` return always means something failed, but not every failure invokes the `errFunction` you passed to the `SDStorage` constructor: it's invoked when the sequence reached `UINT64_MAX` and would have wrapped back to `0`, when an existing sequence file could not be read or parsed (a corrupt or unreadable file), or — for `seqCurrent(...)` specifically — when the sequence has never been advanced or initialized. Other `0`-returning failures — e.g. an invalid sequence filename, or a sequence that isn't part of the transaction it was given — fail without invoking `errFunction`.
+
+**Setting an Initial Value:** If a sequence needs to start somewhere other than `1` (for example, importing IDs from existing data), use `seqInit(...)` to explicitly set its starting value before ever calling `seqNext(...)` or `seqCurrent(...)`:
+
+```cpp
+sdstorage::Sequence importedSeq(F("imported"));
+if (sdStorage.seqInit(importedSeq, 1000)) {
+    uint64_t nextId = sdStorage.seqNext(importedSeq);  // 1001
+}
+```
+
+The initial value must be `1` or greater — like every other `0`-returning failure, passing `0` invokes `errFunction` and returns `false`, since `0` is reserved throughout this API to mean "never initialized."
 
 **Converting to a String:** If you need the sequence's value as a filename-safe string rather than a raw integer, pass a conversion function shaped like `bool (*)(uint64_t value, char* out)`:
 
