@@ -4,7 +4,11 @@
 #include <StreamableDTO.h>
 #include <TestTool.h>
 
-#define SD_CS_PIN 53
+#ifndef OVERRIDE_PINS
+  #ifndef SD_CS_PIN
+  #define SD_CS_PIN 53
+  #endif
+#endif
 
 bool didBegin = false;
 bool beginSuccess = false;
