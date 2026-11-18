@@ -35,10 +35,12 @@ class SequenceManager {
     void (*_errFunction)();
 
     uint64_t current(Sequence seq, void* testState = nullptr);
+    uint64_t peekNext(Sequence seq, void* testState = nullptr);
     uint64_t next(void* testState, Sequence seq, Transaction* txn = nullptr);
     bool init(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr);
 
     bool current(Sequence seq, char* out, SeqToString f, void* testState = nullptr);
+    bool peekNext(Sequence seq, char* out, SeqToString f, void* testState = nullptr);
     bool next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr);
 
     // Loads a sequence's stored value if its file exists. Sets *fileExists
@@ -47,6 +49,11 @@ class SequenceManager {
     // next() and init() never persist 0, so an existing file that yields 0
     // is always corruption or a read failure, never a real stored state.
     uint64_t loadStoredValue(const char* seqFilename, void* testState, bool* fileExists, bool* anomalous);
+
+    // The value next() would store after reading readSource: 1 for a
+    // sequence with no file yet. Returns 0, after calling errFunction, for
+    // an unreadable or corrupt file or a value that would wrap.
+    uint64_t followingValue(const char* readSource, void* testState);
 
     friend class SDStorage;
     friend class SDStorageTestHelper;

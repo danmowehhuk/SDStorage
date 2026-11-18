@@ -205,6 +205,27 @@ void testSeqCurrentNext(TestInvocation* t) {
   f_unlink("/TESTROOT/~SEQ/seq1.seq");
 }
 
+void testSeqPeekNext_matchesNextInTxn(TestInvocation* t) {
+  t->setName(F("seqPeekNext() names the value seqNext() then returns in a transaction"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~SEQ/seq3.seq");
+
+  Sequence mySeq(F("seq3"));
+  uint64_t peeked = sdStorage.seqPeekNext(mySeq);
+  t->verify(peeked == 1, F("a new sequence should peek 1"));
+  t->verify(!sdStorage.exists(F("~SEQ/seq3.seq")), F("peeking should not create the sequence"));
+  Transaction* txn = sdStorage.beginTxn(mySeq);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+  t->verify(sdStorage.seqNext(mySeq, txn) == peeked, F("seqNext should return the peeked value"));
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+  t->verify(sdStorage.seqPeekNext(mySeq) == 2, F("should peek 2 after the commit"));
+  t->verify(sdStorage.seqCurrent(mySeq) == 1, F("peeking should not advance the sequence"));
+
+  f_unlink("/TESTROOT/~SEQ/seq3.seq");
+}
+
 void testFsckRecoversStaleTransaction(TestInvocation* t) {
   t->setName(F("begin() (fsck) recovers a stale, never-committed transaction"));
   t->verify(beginSuccess, F("SKIPPED"));
@@ -444,6 +465,7 @@ int main() {
     testIdxRename_toLastKey,
     testTransaction_erase,
     testSeqCurrentNext,
+    testSeqPeekNext_matchesNextInTxn,
     testFsckRecoversStaleTransaction,
     testTransaction_repeatFileEdit,
     testTransaction_repeatFileAndIndexEdits,

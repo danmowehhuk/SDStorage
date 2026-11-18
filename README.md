@@ -261,6 +261,24 @@ if (txn) {
 }
 ```
 
+**Naming a File After the Next Value:** A transaction covers only what was passed to `beginTxn(...)`, so a file named after the id `seqNext(...)` will return must be named before the transaction begins. `seqPeekNext(...)` returns that value (`1` for a sequence that has never been written) without advancing the sequence:
+
+```cpp
+char id[21];
+if (sdStorage.seqPeekNext(mySeq, id, toDecimal)) {
+    char filename[26];
+    sprintf(filename, "%s.dat", id);
+    Transaction* txn = sdStorage.beginTxn(mySeq, filename);
+    if (txn) {
+        sdStorage.seqNext(mySeq, txn);  // returns the peeked value
+        sdStorage.save(filename, &someDto, txn);
+        sdStorage.commitTxn(txn);
+    }
+}
+```
+
+`seqPeekNext(...)` reads the committed value, so it doesn't count a value `seqNext(...)` staged in a transaction that's still open. It fails like `seqNext(...)`, invoking `errFunction` for a corrupt sequence file or one at `UINT64_MAX`.
+
 For more details, see the [`sequence` example](/examples/sequence/sequence.ino).
 
 ## Transactions: Atomic Updates

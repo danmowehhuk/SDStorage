@@ -209,6 +209,21 @@ class SDStorage {
     bool seqCurrent(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
       return _seqManager->current(seq, out, f, testState);
     };
+    /*
+     * Returns the value the next seqNext() will return, without advancing
+     * the sequence: 1 for a sequence that has never been written. Use it to
+     * name a file after an id before beginning the transaction that takes
+     * the id with seqNext(). It reads the committed value, so a value
+     * staged by seqNext() in a still-open transaction isn't counted. Fails
+     * (0 or false) like seqNext(), invoking errFunction for a corrupt
+     * sequence file or one at UINT64_MAX.
+     */
+    uint64_t seqPeekNext(Sequence seq, void* testState = nullptr) {
+      return _seqManager->peekNext(seq, testState);
+    };
+    bool seqPeekNext(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
+      return _seqManager->peekNext(seq, out, f, testState);
+    };
     bool seqNext(Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
       return seqNext(nullptr, seq, out, f, txn);
     };

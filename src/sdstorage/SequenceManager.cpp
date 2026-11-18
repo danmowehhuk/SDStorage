@@ -62,6 +62,33 @@ uint64_t SequenceManager::current(Sequence seq, void* testState) {
   return value;
 }
 
+uint64_t SequenceManager::followingValue(const char* readSource, void* testState) {
+  // Unlike the public current(), this legitimately treats "file doesn't
+  // exist yet" as the start of a brand-new sequence (0, about to become
+  // 1) - only an existing-but-unreadable/corrupt file is an error here.
+  bool fileExists = false, anomalous = false;
+  uint64_t curr = loadStoredValue(readSource, testState, &fileExists, &anomalous);
+  if (anomalous) {
+    if (_errFunction != nullptr) _errFunction();
+    return 0;
+  }
+  if (curr == UINT64_MAX) {
+    // Incrementing would wrap to 0, risking a collision with the sequence's
+    // initial value. Let the caller's errFunction decide how to handle this
+    // rather than hanging or silently wrapping.
+    if (_errFunction != nullptr) _errFunction();
+    return 0;
+  }
+  return curr + 1;
+}
+
+uint64_t SequenceManager::peekNext(Sequence seq, void* testState) {
+  if (!seq.name) return 0;
+  char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
+  if (!_fileHelper->sequenceFilename(seq, seqFilename, FileHelper::MAX_FILENAME_LENGTH)) return 0;
+  return followingValue(seqFilename, testState);
+}
+
 uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn) {
   if (!seq.name) return 0;
 
@@ -79,28 +106,13 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn) 
     char* staged = _txnManager->getReadSource(txn, seqFilename, testState);
     if (staged) readSource = staged;
   }
-  // Unlike the public current(), next() legitimately treats "file doesn't
-  // exist yet" as the start of a brand-new sequence (0, about to become
-  // 1) - only an existing-but-unreadable/corrupt file is an error here.
   // This also covers the staged-tmp-file case above: getReadSource() only
-  // ever returns that path once it exists, so loadStoredValue() finding it
+  // ever returns that path once it exists, so followingValue() finding it
   // unreadable or holding 0 (next()/init() never persist 0) is correctly
   // treated as the same anomaly as a corrupt committed file, not as "start
   // a new sequence".
-  bool fileExists = false, anomalous = false;
-  uint64_t curr = loadStoredValue(readSource, testState, &fileExists, &anomalous);
-  if (anomalous) {
-    if (_errFunction != nullptr) _errFunction();
-    return 0;
-  }
-  if (curr == UINT64_MAX) {
-    // Incrementing would wrap to 0, risking a collision with the sequence's
-    // initial value. Let the caller's errFunction decide how to handle this
-    // rather than hanging or silently wrapping.
-    if (_errFunction != nullptr) _errFunction();
-    return 0;
-  }
-  uint64_t nextVal = curr + 1;
+  uint64_t nextVal = followingValue(readSource, testState);
+  if (nextVal == 0) return 0;
 
   bool isImplicitTxn = (txn == nullptr);
   if (isImplicitTxn) {
@@ -153,6 +165,13 @@ bool SequenceManager::current(Sequence seq, char* out, SeqToString f, void* test
   if (!out || !f) return false;
   uint64_t val = current(seq, testState);
   if (val == 0) return false; // current() already invoked errFunction on failure
+  return f(val, out);
+}
+
+bool SequenceManager::peekNext(Sequence seq, char* out, SeqToString f, void* testState) {
+  if (!out || !f) return false;
+  uint64_t val = peekNext(seq, testState);
+  if (val == 0) return false;
   return f(val, out);
 }
 
