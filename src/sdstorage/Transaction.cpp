@@ -1,9 +1,9 @@
 #include "Transaction.h"
 #include "../hal/SDStorageHal.h"
 
-static uint16_t Transaction::_idSeq = 0;
+uint16_t Transaction::_idSeq = 0;
 
-static StreamableDTO* Transaction::_locks = new StreamableDTO();
+StreamableDTO* Transaction::_locks = new StreamableDTO();
 
 using namespace SDStorageStrings;
 
@@ -17,7 +17,7 @@ Transaction::Transaction(FileHelper* fileHelper):
 
 Transaction::Transaction(FileHelper* fileHelper, const char* txnFilename):
       StreamableDTO(), _fileHelper(fileHelper) {
-  const char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
+  char* commitExtension = strdup_P(_SDSTORAGE_TXN_COMMIT_EXTSN);
   if (endsWith(txnFilename, commitExtension)) {
     setCommitted();    
   }
@@ -34,7 +34,7 @@ Transaction::Transaction(FileHelper* fileHelper, const char* txnFilename):
 }
 
 void Transaction::setBaseFilename(const char* shortFilename) {
-  char* workDir = _fileHelper->getWorkDir();
+  const char* workDir = _fileHelper->getWorkDir();
   size_t workDirLen = strlen(workDir);
   size_t shortNameLen = strlen(shortFilename);
   _baseFilename = new char[workDirLen + shortNameLen + 2](); // +1 for '/' +1 for '\0'
@@ -48,7 +48,9 @@ void Transaction::setBaseFilename(const char* shortFilename) {
 }
 
 void Transaction::add(const char* filename) {
+#if defined(DEBUG)
   bool didLog = false;
+#endif
   while (_locks->exists(filename)) {
     // wait until the key is removed (lock released)
 #if defined(DEBUG)
@@ -73,8 +75,9 @@ void Transaction::add(const char* filename) {
 }
 
 void Transaction::releaseLocks() {
-  auto unlockFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valPmem, void* capture) -> bool {
-    bool result = _locks->remove(filename, keyPmem);
+  auto unlockFunction = [](const char* filename, const char* /*tmpFilename*/, bool keyPmem,
+                           bool /*valPmem*/, void* /*capture*/) -> bool {
+    _locks->remove(filename, keyPmem);
     return true;
   };
   processEntries(unlockFunction, nullptr);
@@ -84,7 +87,7 @@ bool Transaction::getFilename(char* buffer, size_t bufferSize) {
   if (!buffer || bufferSize == 0 || !FileHelper::verifyBufferSize(bufferSize)) return false;
 
   const char* extPmem = _isCommitted ? _SDSTORAGE_TXN_COMMIT_EXTSN : _SDSTORAGE_TXN_TX_EXTSN;
-  const char* extRAM = strdup_P(extPmem);
+  char* extRAM = strdup_P(extPmem);
   static const char fmt[] PROGMEM = "%s%s";
   int n = snprintf_P(buffer, bufferSize, fmt, _baseFilename, extRAM);
   bool success = true;
@@ -101,6 +104,6 @@ void Transaction::setCommitted() {
   _isCommitted = true;
 }
 
-char* Transaction::getTmpFilename(const char* filename, bool isPmem = false) {
+char* Transaction::getTmpFilename(const char* filename, bool isPmem) {
   return get(filename, isPmem);
 };

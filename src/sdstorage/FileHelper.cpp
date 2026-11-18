@@ -58,9 +58,8 @@ FileHelper::~FileHelper() {
 bool FileHelper::canonicalFilename(Filename filename, char* buffer, size_t bufferSize) {
   if (!filename.name || !buffer || bufferSize == 0 || !verifyBufferSize(bufferSize)) return false;
 
-  const char* filenameRAM = filename.isPmem ? strdup_P(filename.name) : strdup(filename.name);
+  char* filenameRAM = filename.isPmem ? strdup_P(filename.name) : strdup(filename.name);
   size_t rootLen = strlen(_rootDir);
-  size_t filenameLen = strlen(filenameRAM);
   int n = 0;
   if (strncmp(filenameRAM, _rootDir, rootLen) == 0 && filenameRAM[rootLen] == '/') {
     // Already prefixed — just return a copy
@@ -213,7 +212,7 @@ bool FileHelper::indexFilename(sdstorage::Index idx, char* buffer, size_t buffer
   }
 
   char* extRAM = strdup_P(_SDSTORAGE_INDEX_EXTSN);
-  char* idxDir = getIdxDir();
+  const char* idxDir = getIdxDir();
   static const char fmt[] PROGMEM = "%s/%s%s";
   int n = snprintf_P(buffer, bufferSize, fmt, idxDir, idxNameRAM, extRAM);
   bool success = true;
@@ -241,7 +240,7 @@ bool FileHelper::sequenceFilename(sdstorage::Sequence seq, char* buffer, size_t 
   }
 
   char* extRAM = strdup_P(_SDSTORAGE_SEQ_EXTSN);
-  char* seqDir = getSeqDir();
+  const char* seqDir = getSeqDir();
   static const char fmt[] PROGMEM = "%s/%s%s";
   int n = snprintf_P(buffer, bufferSize, fmt, seqDir, seqNameRAM, extRAM);
   bool success = true;

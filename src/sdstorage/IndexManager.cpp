@@ -3,11 +3,11 @@
 
 using namespace SDStorageStrings;
 
-bool IndexManager::idxUpsert(Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
+bool IndexManager::idxUpsert(Index idx, IndexEntry* entry, Transaction* txn) {
   return idxUpsert(nullptr, idx, entry, txn);
 }
 
-bool IndexManager::idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn = nullptr) {
+bool IndexManager::idxUpsert(void* testState, Index idx, IndexEntry* entry, Transaction* txn) {
   if (!idx.name || isEmpty(entry->key)) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxUpsert - index name and entry key cannot be empty"));
@@ -49,11 +49,11 @@ bool IndexManager::idxUpsert(void* testState, Index idx, IndexEntry* entry, Tran
   return _txnManager->finalizeTxn(iTxn.txn, iTxn.isImplicitTxn, iTxn.success, testState);
 }
 
-bool IndexManager::idxRemove(Index idx, const char* key, Transaction* txn = nullptr) {
+bool IndexManager::idxRemove(Index idx, const char* key, Transaction* txn) {
   return idxRemove(nullptr, idx, key, txn);
 }
 
-bool IndexManager::idxRemove(void* testState, Index idx, const char* key, Transaction* txn = nullptr) {
+bool IndexManager::idxRemove(void* testState, Index idx, const char* key, Transaction* txn) {
     if (!idx.name || isEmpty(key)) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxRemove - index name and key cannot be empty"));
@@ -76,11 +76,11 @@ bool IndexManager::idxRemove(void* testState, Index idx, const char* key, Transa
   return _txnManager->finalizeTxn(iTxn.txn, iTxn.isImplicitTxn, iTxn.success, testState);
 }
 
-bool IndexManager::idxRename(Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
+bool IndexManager::idxRename(Index idx, const char* oldKey, const char* newKey, Transaction* txn) {
   return idxRename(nullptr, idx, oldKey, newKey, txn);
 }
 
-bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn = nullptr) {
+bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, const char* newKey, Transaction* txn) {
   if (!idx.name || isEmpty(oldKey) || isEmpty(newKey)) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxRename - index name, oldKey and newKey cannot be empty"));
@@ -127,7 +127,7 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
   return _txnManager->finalizeTxn(iTxn.txn, iTxn.isImplicitTxn, iTxn.success, testState);
 }
 
-bool IndexManager::idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState = nullptr) {
+bool IndexManager::idxLookup(Index idx, const char* key, char* buffer, size_t bufferSize, void* testState) {
   if (!idx.name || isEmpty(key) || !buffer || bufferSize <= 0) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxLookup - index name, key and buffer required"));
@@ -161,7 +161,7 @@ bool IndexManager::idxLookup(Index idx, const char* key, char* buffer, size_t bu
   return success;
 }
 
-bool IndexManager::idxHasKey(Index idx, const char* key, void* testState = nullptr) {
+bool IndexManager::idxHasKey(Index idx, const char* key, void* testState) {
   if (!idx.name || isEmpty(key)) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxLookup - index name and key"));
@@ -181,7 +181,7 @@ bool IndexManager::idxHasKey(Index idx, const char* key, void* testState = nullp
   return (success && state.keyExists);
 }
 
-bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* testState = nullptr) {
+bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* testState) {
   if (!idx.name) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::idxPrefixSearch - index is required"));
@@ -222,7 +222,7 @@ bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* test
  * Scans the index looking for state->key and populating the state->keyExists and state->value
  * fields on the IdxScanCapture object passed in. Scanning stops when the key is found.
  */
-bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState = nullptr) {
+bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState) {
   if (!idxFilename || !state || isEmpty(state->key)) {
 #if (defined(DEBUG))
     SDStorageHal::println(F("IndexManager::_idxScan - index name and key cannot be empty"));

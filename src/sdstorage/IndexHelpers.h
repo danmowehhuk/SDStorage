@@ -28,7 +28,7 @@ class IndexHelpers {
       return true;
     };
 
-    static IndexEntry parseIndexEntry(const char* line) {
+    static IndexEntry parseIndexEntry(char* line) {
       if (!line || !*line) return IndexEntry("");
 
       // Trim leading and trailing spaces in-place

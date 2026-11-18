@@ -57,8 +57,8 @@ namespace sdstorage {
 
     IndexEntry& operator=(const IndexEntry& other) {
       if (this != &other) {
-        if (key) free(key);
-        if (value) free(value);
+        if (key) free(const_cast<char*>(key));
+        if (value) free(const_cast<char*>(value));
         key = other.key ? strdup(other.key) : nullptr;
         value = other.value ? strdup(other.value) : nullptr;
       }
@@ -66,8 +66,8 @@ namespace sdstorage {
     }
 
     ~IndexEntry() {
-      if (key) free(key);
-      if (value) free(value);
+      if (key) free(const_cast<char*>(key));
+      if (value) free(const_cast<char*>(value));
     };
   };
 
