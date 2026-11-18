@@ -71,7 +71,8 @@ namespace {
  *
  ******/
 
-bool StorageProvider::_exists(const char* filename, void* testState = nullptr) {
+bool StorageProvider::_exists(const char* filename, void* testState) {
+  (void)testState;  // used by the test build's mock
 #if defined(__SDSTORAGE_TEST)
   return _sd.exists(filename, testState);
 #elif defined(NO_ARDUINO)
@@ -82,7 +83,8 @@ bool StorageProvider::_exists(const char* filename, void* testState = nullptr) {
 #endif
 }
 
-bool StorageProvider::_mkdir(const char* filename, void* testState = nullptr) {
+bool StorageProvider::_mkdir(const char* filename, void* testState) {
+  (void)testState;  // used by the test build's mock
 #if defined(__SDSTORAGE_TEST)
   return _sd.mkdir(filename, testState);
 #elif defined(NO_ARDUINO)
@@ -92,7 +94,8 @@ bool StorageProvider::_mkdir(const char* filename, void* testState = nullptr) {
 #endif
 }
 
-bool StorageProvider::_writeTxnToStream(const char* filename, Transaction* txn, void* testState = nullptr) {
+bool StorageProvider::_writeTxnToStream(const char* filename, Transaction* txn, void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeTxnFileStream(filename, testState);
@@ -113,7 +116,8 @@ bool StorageProvider::_writeTxnToStream(const char* filename, Transaction* txn, 
   return true;
 }
 
-bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
+bool StorageProvider::_isDir(const char* filename, void* testState) {
+  (void)testState;  // used by the test build's mock
   bool isDir = false;
 #if defined(__SDSTORAGE_TEST)
   isDir = _sd.isDirectory(filename, testState);
@@ -130,7 +134,8 @@ bool StorageProvider::_isDir(const char* filename, void* testState = nullptr) {
   return isDir;
 }
 
-bool StorageProvider::_remove(const char* filename, void* testState = nullptr) {
+bool StorageProvider::_remove(const char* filename, void* testState) {
+  (void)testState;  // used by the test build's mock
 #if defined(__SDSTORAGE_TEST)
   return _sd.remove(filename, testState);
 #elif defined(NO_ARDUINO)
@@ -156,7 +161,8 @@ bool StorageProvider::_removeTree(const char* dirName, void* testState) {
 #endif
 }
 
-bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, void* testState = nullptr) {
+bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, void* testState) {
+  (void)testState;  // used by the test build's mock
 #if defined(__SDSTORAGE_TEST)
   return _sd.rename(oldFilename, newFilename, testState);
 #elif defined(NO_ARDUINO)
@@ -166,7 +172,8 @@ bool StorageProvider::_rename(const char* oldFilename, const char* newFilename, 
 #endif
 }
 
-bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* src = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.loadFileStream(filename, testState);
@@ -188,7 +195,8 @@ bool StorageProvider::_loadFromStream(const char* filename, StreamableDTO* dto, 
   return result;
 }
 
-bool StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, void* testState = nullptr) {
+bool StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeFileStream(filename, testState);
@@ -209,7 +217,8 @@ bool StorageProvider::_writeToStream(const char* filename, StreamableDTO* dto, v
   return true;
 }
 
-bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr) {
+bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* line, void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
   dest = _sd.writeIndexFileStream(indexFilename, testState);
@@ -243,7 +252,8 @@ bool StorageProvider::_writeIndexLine(const char* indexFilename, const char* lin
 
 bool StorageProvider::_updateIndex(
       const char* indexFilename, const char* tmpFilename,
-      StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr) {
+      StreamableManager::FilterFunction filter, void* statePtr, void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* src = nullptr;
   Stream* dest = nullptr;
 #if defined(__SDSTORAGE_TEST)
@@ -282,7 +292,8 @@ bool StorageProvider::_updateIndex(
 }
 
 bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, void* statePtr,
-      void* testState = nullptr) {
+      void* testState) {
+  (void)testState;  // used by the test build's mock
   Stream* src = nullptr;
 #if defined(__SDSTORAGE_TEST)
   src = _sd.readIndexFileStream(indexFilename, testState);

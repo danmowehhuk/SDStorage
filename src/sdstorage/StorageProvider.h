@@ -27,7 +27,7 @@ class StorageProvider {
     StorageProvider(const StorageProvider&) = delete;
     StorageProvider& operator=(const StorageProvider&) = delete;
 
-    const size_t getBufferSize() const { return _streams.getBufferSize(); };
+    size_t getBufferSize() const { return _streams.getBufferSize(); };
 
   private:
     uint8_t _sdCsPin;         // SD card chip select pin

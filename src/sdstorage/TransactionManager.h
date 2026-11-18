@@ -19,7 +19,7 @@ class TransactionManager {
 
   public:
     TransactionManager(FileHelper* fileHelper, StorageProvider* storageProvider, void (*errFunction)() = nullptr):
-        _fileHelper(fileHelper), _storageProvider(storageProvider), _errFunction(errFunction) {};
+        _errFunction(errFunction), _fileHelper(fileHelper), _storageProvider(storageProvider) {};
 
     // Disable moving and copying
     TransactionManager(TransactionManager&& other) = delete;
@@ -74,7 +74,7 @@ class TransactionManager {
     bool _beginTxn(Transaction* txn, void* testState, sdstorage::Index idx, Args... moreFilenames);
     template <typename... Args>
     bool _beginTxn(Transaction* txn, void* testState, sdstorage::Sequence seq, Args... moreFilenames);
-    bool _beginTxn(Transaction* txn, void* testState) { return true; }; // termination case
+    bool _beginTxn(Transaction* /*txn*/, void* /*testState*/) { return true; }; // termination case
 
     /*
      * Transaction helper methods

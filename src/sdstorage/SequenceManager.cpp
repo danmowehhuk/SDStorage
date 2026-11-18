@@ -44,7 +44,7 @@ uint64_t SequenceManager::loadStoredValue(const char* seqFilename, void* testSta
   return val.value;
 }
 
-uint64_t SequenceManager::current(Sequence seq, void* testState = nullptr) {
+uint64_t SequenceManager::current(Sequence seq, void* testState) {
   if (!seq.name) return 0;
   char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->sequenceFilename(seq, seqFilename, FileHelper::MAX_FILENAME_LENGTH)) return 0;
@@ -62,7 +62,7 @@ uint64_t SequenceManager::current(Sequence seq, void* testState = nullptr) {
   return value;
 }
 
-uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn = nullptr) {
+uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn) {
   if (!seq.name) return 0;
 
   char seqFilename[FileHelper::MAX_FILENAME_LENGTH];
@@ -119,7 +119,7 @@ uint64_t SequenceManager::next(void* testState, Sequence seq, Transaction* txn =
   return (success && committed) ? nextVal : 0;
 }
 
-bool SequenceManager::init(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn = nullptr) {
+bool SequenceManager::init(void* testState, Sequence seq, uint64_t initialValue, Transaction* txn) {
   if (!seq.name) return false;
   if (initialValue == 0) {
     // 0 is reserved throughout this API to mean "never initialized" (and is
@@ -149,14 +149,14 @@ bool SequenceManager::init(void* testState, Sequence seq, uint64_t initialValue,
   return success && committed;
 }
 
-bool SequenceManager::current(Sequence seq, char* out, SeqToString f, void* testState = nullptr) {
+bool SequenceManager::current(Sequence seq, char* out, SeqToString f, void* testState) {
   if (!out || !f) return false;
   uint64_t val = current(seq, testState);
   if (val == 0) return false; // current() already invoked errFunction on failure
   return f(val, out);
 }
 
-bool SequenceManager::next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn = nullptr) {
+bool SequenceManager::next(void* testState, Sequence seq, char* out, SeqToString f, Transaction* txn) {
   if (!out || !f) return false;
   uint64_t val = next(testState, seq, txn);
   if (val == 0) return false;

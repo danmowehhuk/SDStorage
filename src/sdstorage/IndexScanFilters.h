@@ -151,7 +151,7 @@ class IndexScanFilters {
       return true;
     }
 
-    static bool idxLookupFilter(const char* line, StreamableManager::DestinationStream* dest, 
+    static bool idxLookupFilter(const char* line, StreamableManager::DestinationStream* /*dest*/, 
           void* statePtr) {
       IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);
       char* l = strdup(line);
@@ -165,7 +165,7 @@ class IndexScanFilters {
       return true; // keep going
     }
 
-    static bool idxPrefixSearchFilter(const char* line, StreamableManager::DestinationStream* dest, 
+    static bool idxPrefixSearchFilter(const char* line, StreamableManager::DestinationStream* /*dest*/, 
           void* statePtr) {
       SearchResults* results = static_cast<SearchResults*>(statePtr);
       char* l = strdup(line);

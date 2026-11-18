@@ -1,7 +1,7 @@
 #include "TransactionManager.h"
 #include "../hal/SDStorageHal.h"
 
-bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) {
+bool TransactionManager::commitTxn(Transaction* txn, void* testState) {
   bool commitSuccess = false;
   do {
     char oldName[FileHelper::MAX_FILENAME_LENGTH];
@@ -29,9 +29,10 @@ bool TransactionManager::commitTxn(Transaction* txn, void* testState = nullptr) 
   return commitSuccess;
 }
 
-bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
+bool TransactionManager::abortTxn(Transaction* txn, void* testState) {
 
-  auto cleanupFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valPmem, void* capture) -> bool {
+  auto cleanupFunction = [](const char* /*filename*/, const char* tmpFilename, bool /*keyPmem*/,
+                            bool /*valPmem*/, void* capture) -> bool {
     TransactionCapture* c = static_cast<TransactionCapture*>(capture);
     if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
       // Tombstone - nothing to clean up
@@ -66,7 +67,7 @@ bool TransactionManager::abortTxn(Transaction* txn, void* testState = nullptr) {
 /*
  * Locks a file to the transaction, creating a temp file for writing
  */
-bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const char* filename, bool isPmem = false) {
+bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const char* filename, bool isPmem) {
   FileHelper::Filename fname(filename, isPmem);
   char resolvedFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!_fileHelper->canonicalFilename(fname, resolvedFilename, FileHelper::MAX_FILENAME_LENGTH)) {
@@ -118,7 +119,7 @@ bool TransactionManager::addFileToTxn(Transaction* txn, void* testState, const c
   return result;
 }
 
-char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename, bool isPmem = false) {
+char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename, bool isPmem) {
   char* tmpFilename = txn->getTmpFilename(filename, isPmem);
   if (!tmpFilename) {
 #if defined(DEBUG)
@@ -144,7 +145,7 @@ char* TransactionManager::getTmpFilename(Transaction* txn, const char* filename,
   return tmpFilename;
 }
 
-char* TransactionManager::getReadSource(Transaction* txn, const char* filename, void* testState, bool isPmem = false) {
+char* TransactionManager::getReadSource(Transaction* txn, const char* filename, void* testState, bool isPmem) {
   char* tmpFilename = txn->getTmpFilename(filename, isPmem);
   if (!tmpFilename || strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {
     return nullptr;
@@ -172,7 +173,7 @@ bool TransactionManager::finalizeTxn(Transaction* txn, bool autoCommit, bool suc
   }
 }
 
-void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr) {
+void TransactionManager::cleanupTxn(Transaction* txn, void* testState) {
   char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
   if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) {
 #if defined(DEBUG)
@@ -188,9 +189,10 @@ void TransactionManager::cleanupTxn(Transaction* txn, void* testState = nullptr)
   delete txn;
 }
 
-bool TransactionManager::applyChanges(Transaction* txn, void* testState = nullptr) {
+bool TransactionManager::applyChanges(Transaction* txn, void* testState) {
 
-  auto applyChangesFunction = [](const char* filename, const char* tmpFilename, bool keyPmem, bool valuePmem, void* capture) -> bool {
+  auto applyChangesFunction = [](const char* filename, const char* tmpFilename, bool /*keyPmem*/,
+                                 bool /*valuePmem*/, void* capture) -> bool {
     TransactionCapture* c = static_cast<TransactionCapture*>(capture);
 
     if (strcmp_P(tmpFilename, _SDSTORAGE_TOMBSTONE) == 0) {

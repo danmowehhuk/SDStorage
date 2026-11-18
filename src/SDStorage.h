@@ -51,7 +51,7 @@ class SDStorage {
      * and rolling back any others.
      */
     SDStorage(uint8_t sdCsPin, const char* rootDir, bool isRootDirPmem = false, void (*errFunction)() = nullptr):
-          _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin), _errFunction(errFunction) {
+          _errFunction(errFunction), _fileHelper(rootDir, isRootDirPmem), _storageProvider(sdCsPin) {
         _txnManager = new TransactionManager(&_fileHelper, &_storageProvider, _errFunction);
         _idxManager = new IndexManager(&_fileHelper, &_storageProvider, _txnManager);
         _seqManager = new SequenceManager(&_fileHelper, &_storageProvider, _txnManager, _errFunction);

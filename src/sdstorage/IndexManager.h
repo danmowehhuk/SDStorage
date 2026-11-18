@@ -74,7 +74,7 @@ class IndexManager {
     bool _swapIntoPlace(const char* scratchFilename, const char* tmpFilename, void* testState);
 
     // General purpose index scanner
-    bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState = nullptr);
+    bool _idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState = nullptr);
     
     friend class IndexScanFilters;
     friend class SDStorage;
