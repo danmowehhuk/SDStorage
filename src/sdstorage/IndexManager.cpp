@@ -117,6 +117,15 @@ bool IndexManager::idxRename(void* testState, Index idx, const char* oldKey, con
       char scratchFilename[FileHelper::MAX_FILENAME_LENGTH];
       if (_getScratchFilename(iTxn.tmpFilename, scratchFilename, FileHelper::MAX_FILENAME_LENGTH)) {
         success = _storageProvider->_updateIndex(iTxn.readSource, scratchFilename, IndexScanFilters::idxRenameFilter, &state, testState);
+        if (success && state.didRemove && !state.didInsert) {
+          // The new key sorts after every other key, so it goes at the end.
+          IndexEntry newEntry(newKey, state.value);
+          size_t bufSize = _storageProvider->getBufferSize();
+          char newLine[bufSize];
+          success = IndexHelpers::toIndexLine(&newEntry, newLine, bufSize)
+              && _storageProvider->_writeIndexLine(scratchFilename, newLine, testState);
+          state.didInsert = success;
+        }
         if (success) success = _swapIntoPlace(scratchFilename, iTxn.tmpFilename, testState);
       } else {
         success = false;

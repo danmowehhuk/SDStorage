@@ -148,6 +148,47 @@ void testIndexUpsertLookupRemove(TestInvocation* t) {
   f_unlink("/TESTROOT/~IDX/idx1.idx");
 }
 
+void testTransaction_erase(TestInvocation* t) {
+  t->setName(F("erase() in a transaction deletes on commit"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  StreamableDTO dto;
+  dto.put(F("abc"), F("def"));
+  t->verify(sdStorage.save(F("txnerase.dat"), &dto), F("save failed"));
+  if (!t->passed()) return;
+
+  Transaction* txn = sdStorage.beginTxn(F("txnerase.dat"));
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+  t->verify(sdStorage.erase(F("txnerase.dat"), txn), F("erase failed"));
+  t->verify(sdStorage.commitTxn(txn), F("commit failed"));
+  t->verify(!sdStorage.exists(F("txnerase.dat")), F("txnerase.dat not deleted"));
+}
+
+void testIdxRename_toLastKey(TestInvocation* t) {
+  t->setName(F("idxRename() to a key that sorts last"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  f_unlink("/TESTROOT/~IDX/idx4.idx");
+
+  Index myIdx(F("idx4"));
+  IndexEntry entryA(F("abc"), F("1"));
+  IndexEntry entryB(F("def"), F("2"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryA), F("upsert abc failed"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entryB), F("upsert def failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.idxRename(myIdx, "abc", "xyz"), F("rename failed"));
+  t->verify(!sdStorage.idxHasKey(myIdx, "abc"), F("abc still present"));
+  t->verify(sdStorage.idxHasKey(myIdx, "def"), F("def lost"));
+  char buf[10];
+  t->verify(sdStorage.idxLookup(myIdx, "xyz", buf, 10), F("xyz not found"));
+  if (t->passed()) t->verifyEqual(buf, F("1"));
+
+  // cleanup
+  f_unlink("/TESTROOT/~IDX/idx4.idx");
+}
+
 void testSeqCurrentNext(TestInvocation* t) {
   t->setName(F("seqCurrent()/seqNext() round-trip"));
   t->verify(beginSuccess, F("SKIPPED"));
@@ -400,6 +441,8 @@ int main() {
     testSaveLoadErase,
     testPurge,
     testIndexUpsertLookupRemove,
+    testIdxRename_toLastKey,
+    testTransaction_erase,
     testSeqCurrentNext,
     testFsckRecoversStaleTransaction,
     testTransaction_repeatFileEdit,

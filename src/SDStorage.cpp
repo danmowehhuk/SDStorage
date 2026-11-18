@@ -195,7 +195,10 @@ bool SDStorage::erase(void* testState, const char* filename, bool isFilenamePmem
     if (txn) {
       char* tmpFilename = _txnManager->getTmpFilename(txn, resolvedFilename);
       if (!tmpFilename || strlen(tmpFilename) == 0) break;
-      txn->put(resolvedFilename, _SDSTORAGE_TOMBSTONE, false, true); // tombstone the filename
+      // In RAM, as the commit and abort code compare it with strcmp_P().
+      char* tombstone = strdup_P(_SDSTORAGE_TOMBSTONE);
+      txn->put(resolvedFilename, tombstone, false, false); // tombstone the filename
+      free(tombstone);
       char txnFilename[FileHelper::MAX_FILENAME_LENGTH];
       if (!txn->getFilename(txnFilename, FileHelper::MAX_FILENAME_LENGTH)) break;
       if (!_storageProvider._writeTxnToStream(txnFilename, txn, testState)) break;
