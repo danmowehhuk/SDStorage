@@ -25,18 +25,7 @@ bool SDStorage::begin(void* testState) {
     const char* secondSlash = strchr(_fileHelper.getRootDir() + 1, '/');
     if (secondSlash != nullptr) break; // Invalid root dir (subdirectories not allowed)
     if (!_storageProvider.begin()) break;
-    if (!_storageProvider._exists(_fileHelper.getRootDir(), testState)) {
-      if (!_storageProvider._mkdir(_fileHelper.getRootDir(), testState)) break;
-    } 
-    if (!_storageProvider._exists(_fileHelper.getIdxDir(), testState)) {
-      if (!_storageProvider._mkdir(_fileHelper.getIdxDir(), testState)) break;
-    } 
-    if (!_storageProvider._exists(_fileHelper.getWorkDir(), testState)) {
-      if (!_storageProvider._mkdir(_fileHelper.getWorkDir(), testState)) break;
-    }
-    if (!_storageProvider._exists(_fileHelper.getSeqDir(), testState)) {
-      if (!_storageProvider._mkdir(_fileHelper.getSeqDir(), testState)) break;
-    }
+    if (!createWorkingDirs(testState)) break;
     if (!fsck()) {
 #if defined(DEBUG)
       SDStorageHal::println(F("SDStorage repair failed"));
@@ -46,6 +35,26 @@ bool SDStorage::begin(void* testState) {
     sdInit = true;
   } while (false);
   return sdInit;
+}
+
+/*
+ * see SDStorage.h
+ */
+bool SDStorage::purge(void* testState) {
+  return _storageProvider._removeTree(_fileHelper.getRootDir(), testState)
+      && createWorkingDirs(testState);
+}
+
+bool SDStorage::createWorkingDirs(void* testState) {
+  const char* dirs[] = { _fileHelper.getRootDir(), _fileHelper.getIdxDir(),
+                         _fileHelper.getWorkDir(), _fileHelper.getSeqDir() };
+  for (const char* dir : dirs) {
+    if (!_storageProvider._exists(dir, testState)
+        && !_storageProvider._mkdir(dir, testState)) {
+      return false;
+    }
+  }
+  return true;
 }
 
 /*

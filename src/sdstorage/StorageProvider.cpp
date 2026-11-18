@@ -1,5 +1,68 @@
 #include "StorageProvider.h"
 
+#if !defined(__SDSTORAGE_TEST)
+#include <string.h>
+
+namespace {
+
+  // Longest path _removeTree() handles, with its terminator. SDStorage's
+  // root is one level deep and its names are 8.3.
+  const size_t TREE_PATH_SIZE = 80;
+
+#if defined(NO_ARDUINO)
+  // Removes everything in the directory at path, then the directory.
+  // path's buffer holds TREE_PATH_SIZE; names are appended to it in turn.
+  bool removeTree(char* path) {
+    FATFS_DIR dir;
+    if (f_opendir(&dir, path) != FR_OK) return false;
+    size_t length = strlen(path);
+    FILINFO info;
+    bool ok = true;
+    // Rewinds before each read, so removals never disturb the next read.
+    while (ok && f_readdir(&dir, nullptr) == FR_OK && f_readdir(&dir, &info) == FR_OK
+           && info.fname[0]) {
+      if (length + 1 + strlen(info.fname) >= TREE_PATH_SIZE) {
+        ok = false;
+        break;
+      }
+      path[length] = '/';
+      strcpy(path + length + 1, info.fname);
+      ok = (info.fattrib & AM_DIR) ? removeTree(path) : f_unlink(path) == FR_OK;
+      path[length] = '\0';
+    }
+    f_closedir(&dir);
+    return ok && f_unlink(path) == FR_OK;
+  }
+#else
+  // As above, for SdFat. Its File (FsFile on most boards) has no rmRfStar().
+  bool removeTree(SdFat& sd, char* path) {
+    File dir = sd.open(path, O_RDONLY);
+    if (!dir || !dir.isDir()) return false;
+    size_t length = strlen(path);
+    File entry;
+    bool ok = true;
+    while (ok && entry.openNext(&dir, O_RDONLY)) {
+      char name[TREE_PATH_SIZE];
+      size_t nameLength = entry.getName(name, sizeof(name));
+      bool isDir = entry.isDir();
+      entry.close();
+      if (nameLength == 0 || length + 1 + nameLength >= TREE_PATH_SIZE) {
+        ok = false;
+        break;
+      }
+      path[length] = '/';
+      strcpy(path + length + 1, name);
+      ok = isDir ? removeTree(sd, path) : sd.remove(path);
+      path[length] = '\0';
+    }
+    dir.close();
+    return ok && sd.rmdir(path);
+  }
+#endif
+
+}
+#endif
+
 /******
  *
  * The following wrapper methods allow sending a state object to a
@@ -74,6 +137,22 @@ bool StorageProvider::_remove(const char* filename, void* testState = nullptr) {
   return f_unlink(filename) == FR_OK;
 #else
   return _sd.remove(filename);
+#endif
+}
+
+bool StorageProvider::_removeTree(const char* dirName, void* testState) {
+#if defined(__SDSTORAGE_TEST)
+  return _sd.removeTree(dirName, testState);
+#else
+  if (!_exists(dirName, testState)) return true;
+  if (strlen(dirName) >= TREE_PATH_SIZE) return false;
+  char path[TREE_PATH_SIZE];
+  strcpy(path, dirName);
+#if defined(NO_ARDUINO)
+  return removeTree(path);
+#else
+  return removeTree(_sd, path);
+#endif
 #endif
 }
 

@@ -25,6 +25,7 @@ class MockSdFat {
       bool onExistsAlwaysReturn = false;
       bool onIsDirectoryReturn = false;
       bool onRemoveReturn = false;
+      bool onRemoveTreeReturn = false;
       bool onRenameReturn = false;
       char* mkdirCaptor = nullptr;
       char* onLoadData = nullptr;
@@ -32,6 +33,7 @@ class MockSdFat {
       char* loadFilenameCaptor = nullptr;
       char* writeTxnFilenameCaptor = nullptr;
       char* removeCaptor = nullptr;
+      char* removeTreeCaptor = nullptr;
       char* renameOldCaptor = nullptr;
       char* renameNewCaptor = nullptr;
       char* readIdxFilenameCaptor = nullptr;
@@ -47,6 +49,7 @@ class MockSdFat {
         if (onReadIdxData) free(onReadIdxData);
         if (writeTxnFilenameCaptor) free(writeTxnFilenameCaptor);
         if (removeCaptor) free(removeCaptor);
+        if (removeTreeCaptor) free(removeTreeCaptor);
         if (renameOldCaptor) free(renameOldCaptor);
         if (renameNewCaptor) free(renameNewCaptor);
         if (readIdxFilenameCaptor) free(readIdxFilenameCaptor);
@@ -57,6 +60,7 @@ class MockSdFat {
         loadFilenameCaptor = nullptr;
         writeTxnFilenameCaptor = nullptr;
         removeCaptor = nullptr;
+        removeTreeCaptor = nullptr;
         renameOldCaptor = nullptr;
         renameNewCaptor = nullptr;
         readIdxFilenameCaptor = nullptr;
@@ -89,6 +93,13 @@ class MockSdFat {
       ts->removeCaptor = nullptr;
       ts->removeCaptor = strdup(filename);
       return ts->onRemoveReturn;
+    };
+
+    bool removeTree(const char* dirName, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->removeTreeCaptor) free(ts->removeTreeCaptor);
+      ts->removeTreeCaptor = strdup(dirName);
+      return ts->onRemoveTreeReturn;
     };
 
     bool rename(const char* oldFilename, const char* newFilename, void* testState) {

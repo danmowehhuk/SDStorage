@@ -93,6 +93,27 @@ void testSaveLoadErase(TestInvocation* t) {
   t->verify(!sdStorage.exists(F("file1.dat")), F("file1.dat not erased"));
 }
 
+void testPurge(TestInvocation* t) {
+  t->setName(F("purge() empties the root and keeps working dirs"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  StreamableDTO dto;
+  dto.put(F("abc"), F("def"));
+  t->verify(sdStorage.save(F("purge1.dat"), &dto), F("save failed"));
+  t->verify(sdStorage.mkdir(F("purgedir")), F("mkdir failed"));
+  t->verify(sdStorage.mkdir(F("purgedir/sub")), F("nested mkdir failed"));
+  t->verify(sdStorage.save(F("purgedir/sub/purge2.dat"), &dto), F("nested save failed"));
+  if (!t->passed()) return;
+
+  t->verify(sdStorage.purge(), F("purge failed"));
+  if (!t->passed()) return;
+  t->verify(!sdStorage.exists(F("purge1.dat")), F("purge1.dat not purged"));
+  t->verify(!sdStorage.exists(F("purgedir")), F("purgedir not purged"));
+  t->verify(sdStorage.exists(F("~IDX")), F("~IDX not recreated"));
+  t->verify(sdStorage.exists(F("~WORK")), F("~WORK not recreated"));
+  t->verify(sdStorage.exists(F("~SEQ")), F("~SEQ not recreated"));
+}
+
 void testIndexUpsertLookupRemove(TestInvocation* t) {
   t->setName(F("idxUpsert()/idxLookup()/idxRemove() round-trip"));
   t->verify(beginSuccess, F("SKIPPED"));
@@ -377,6 +398,7 @@ int main() {
     testExists_absentFile,
     testMkdir,
     testSaveLoadErase,
+    testPurge,
     testIndexUpsertLookupRemove,
     testSeqCurrentNext,
     testFsckRecoversStaleTransaction,
