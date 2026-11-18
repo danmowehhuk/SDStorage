@@ -82,6 +82,14 @@ class SDStorage {
     bool begin(void* testState = nullptr);
 
     /*
+     * Deletes everything under the root directory, then recreates the
+     * working directories, leaving an empty root. Meant for test suites
+     * that start from a known state; call it after begin(), with no
+     * transaction open. Returns false if any of this fails.
+     */
+    bool purge(void* testState = nullptr);
+
+    /*
      * FILE OPERATIONS
      *
      * The following prepend the path with the root directory if necessary
@@ -299,6 +307,8 @@ class SDStorage {
      * all others are rolled back.
      */
     bool fsck();
+    // Creates the root and working directories that don't exist yet.
+    bool createWorkingDirs(void* testState);
 
 };
 

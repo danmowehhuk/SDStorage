@@ -95,6 +95,14 @@ if (sdStorage.exists(filename)) {
 }
 ```
 
+**Starting from an empty root:** `purge()` deletes everything under the root directory, then recreates SDStorage's working directories. It's meant for test suites that need a known starting state; call it after `begin()`, with no transaction open. Give such a suite its own root directory so it never purges real data:
+
+```cpp
+if (!sdStorage.begin() || !sdStorage.purge()) {
+    Serial.println(F("Couldn't prepare the test root"));
+}
+```
+
 For more details on basic save/load usage, see the [`basic` example](/examples/basic/basic.ino).
 
 ## Using Indexes

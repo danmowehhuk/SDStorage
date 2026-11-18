@@ -38,6 +38,25 @@ void testBegin(TestInvocation* t) {
   t->verifyEqual(helper.getSeqDir(sdStorage), F("/TESTROOT/~SEQ"));
 }
 
+void testPurge(TestInvocation* t) {
+  t->setName(F("purge() removes the root, then recreates it"));
+  MockSdFat::TestState ts;
+  ts.onRemoveTreeReturn = true;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = false;
+  t->verify(sdStorage->purge(&ts), F("purge failed"));
+  t->verifyEqual(ts.removeTreeCaptor, F("/TESTROOT"));
+  t->verifyEqual(ts.mkdirCaptor, F("/TESTROOT/~SEQ"));
+}
+
+void testPurge_removeFails(TestInvocation* t) {
+  t->setName(F("purge() fails if the root can't be removed"));
+  MockSdFat::TestState ts;
+  ts.onRemoveTreeReturn = false;
+  t->verify(!sdStorage->purge(&ts), F("purge should fail"));
+  t->verify(ts.mkdirCaptor == nullptr, F("nothing should be recreated"));
+}
+
 void testConstructor(TestInvocation* t) {
   t->setName(F("Constructor/destructor memory leaks"));
   auto errFunc = []() {};
@@ -1169,6 +1188,8 @@ void setup() {
 
   TestFunction tests[] = {
     testBegin,
+    testPurge,
+    testPurge_removeFails,
     testConstructor,
     testCanonicalFilename,
     testCanonicalFilename_rejectsInvalidFAT16Name,
