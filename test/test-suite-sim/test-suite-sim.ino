@@ -569,6 +569,60 @@ void testSeqNext_stringify_overflowFails(TestInvocation* t) {
   t->verify(!sdStorage->seqNext(&ts, Sequence(F("mySeq")), out, toDecimalString), F("Should have failed on overflow"));
 }
 
+void testSeqPeekNext_newSequence(TestInvocation* t) {
+  t->setName(F("Sequence peekNext() - a brand-new sequence peeks 1, writes nothing"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = false; // mySeq.seq doesn't exist yet
+
+  errThrown = false;
+  t->verify(sdStorage->seqPeekNext(Sequence(F("mySeq")), &ts) == 1, F("Expected 1"));
+  t->verify(!errThrown, F("errFunction should not be invoked"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
+void testSeqPeekNext_existingValue(TestInvocation* t) {
+  t->setName(F("Sequence peekNext() - an existing value peeks one more, writes nothing"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // mySeq.seq exists
+  ts.onLoadData = strdup(F("v=41\n"));
+
+  t->verify(sdStorage->seqPeekNext(Sequence(F("mySeq")), &ts) == 42, F("Expected 42"));
+  t->verify(!ts.writeDataCaptor.get() || strlen(ts.writeDataCaptor.get()) == 0, F("Should not have written anything"));
+}
+
+void testSeqPeekNext_overflowCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence peekNext() - overflow calls errFunction"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=18446744073709551615\n")); // UINT64_MAX
+
+  errThrown = false;
+  t->verify(sdStorage->seqPeekNext(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 on overflow"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+}
+
+void testSeqPeekNext_corruptValueCallsErrFunction(TestInvocation* t) {
+  t->setName(F("Sequence peekNext() - an unparseable existing file calls errFunction"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("garbage\n"));
+
+  errThrown = false;
+  t->verify(sdStorage->seqPeekNext(Sequence(F("mySeq")), &ts) == 0, F("Expected 0 on a corrupt file"));
+  t->verify(errThrown, F("Expected errFunction to be invoked"));
+}
+
+void testSeqPeekNext_stringify(TestInvocation* t) {
+  t->setName(F("Sequence peekNext() - stringify overload"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;
+  ts.onLoadData = strdup(F("v=41\n"));
+
+  char out[21];
+  t->verify(sdStorage->seqPeekNext(Sequence(F("mySeq")), out, toDecimalString, &ts), F("seqPeekNext stringify failed"));
+  t->verifyEqual(out, F("42"));
+}
+
 void testBeginTxn_withSequence(TestInvocation* t) {
   t->setName(F("beginTxn() accepts a Sequence"));
   MockSdFat::TestState ts;
@@ -1229,6 +1283,11 @@ void setup() {
     testSeqCurrent_stringify,
     testSeqNext_stringify,
     testSeqNext_stringify_overflowFails,
+    testSeqPeekNext_newSequence,
+    testSeqPeekNext_existingValue,
+    testSeqPeekNext_overflowCallsErrFunction,
+    testSeqPeekNext_corruptValueCallsErrFunction,
+    testSeqPeekNext_stringify,
     testBeginTxn_withSequence,
     testSeqNext_withExplicitTxn,
     testSeqNext_withExplicitTxn_calledTwice,
