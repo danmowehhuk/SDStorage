@@ -19,6 +19,16 @@ class File : public Stream {
     bool isOpen() const;
     bool isDirectory() const;
 
+    // Moves to a byte offset in the file, as SdFat's File::seek() does.
+    // Params:
+    //   position - the offset from the start of the file
+    // Returns true if it moved, false if the file isn't open or position
+    // is past its end.
+    bool seek(uint32_t position);
+
+    uint32_t position();
+    uint32_t size();
+
     int available() override;
     int read() override;
     size_t write(uint8_t byte) override;

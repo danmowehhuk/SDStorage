@@ -7,7 +7,7 @@
 **Key Features:**
 
 - **[StreamableDTO](https://github.com/danmowehhuk/StreamableDTO) Persistence:** Designed specifically to save and load StreamableDTO objects to SD cards.
-- **Native Indexes:** Create one or more indexes on any string-based key/value data (e.g., a field of your DTO). All index operations run in O(n) time but require only O(1) memory, making them well-suited for low-memory embedded systems.
+- **Native Indexes:** Create one or more indexes on any string-based key/value data (e.g., a field of your DTO). Lookups take O(log n) time, prefix searches O(log n) plus the matching keys, and writes O(n), all in O(1) memory, making them well-suited for low-memory embedded systems.
 - **Prefix Searches:** Indexes support efficient prefix-based lookups. This allows you to retrieve all entries with keys matching a given prefix, which is perfect for building UI features like auto-complete (e.g., ComboBoxes that suggest entries as you type) or implementing trie-based searches.
 - **Sequences:** Named, persistent `uint64_t` counters for generating unique, incrementing IDs (e.g., for filenames or record keys), backed by the SD card so they survive a restart.
 - **Atomic Transactions:** SDStorage supports transactional updates, meaning you can group multiple operations (such as saving a DTO and updating several indexes) into one atomic unit.
@@ -154,7 +154,7 @@ if (sdStorage.idxHasKey(idIndex, "12345")) {
 }
 ```
 
-**Under the Hood:** Index files are maintained on the SD card in a way that allows for searches in O(n) time, but O(1) memory. Keys are sorted and always scanned in ascending order. You can have multiple indexes for different keys (for example, one index by device ID, another by device name, etc.). Each index is independent and identified by its name. For more details, see the [`index` example](/examples/index/index.ino).
+**Under the Hood:** Index files are kept sorted by key on the SD card. A lookup or prefix search binary-searches the file to near its key, then scans in ascending order from there, so a lookup takes O(log n) time in O(1) memory (a prefix search also reads each matching key). A write rewrites the file, so it takes O(n) time. You can have multiple indexes for different keys (for example, one index by device ID, another by device name, etc.). Each index is independent and identified by its name. For more details, see the [`index` example](/examples/index/index.ino).
 
 ## Prefix Searches for Autocomplete
 

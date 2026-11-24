@@ -1,6 +1,7 @@
 #ifdef NO_ARDUINO
 
 #include "File.h"
+#include <limits.h>
 
 File::File() {}
 
@@ -34,9 +35,25 @@ void File::close() {
 bool File::isOpen() const { return _open; }
 bool File::isDirectory() const { return _isDir; }
 
+bool File::seek(uint32_t position) {
+  // f_lseek() extends a file opened for writing when position is past
+  // its end; a read never needs that.
+  return _open && !_isDir && position <= f_size(&_fil) && f_lseek(&_fil, position) == FR_OK;
+}
+
+uint32_t File::position() {
+  return _open && !_isDir ? f_tell(&_fil) : 0;
+}
+
+uint32_t File::size() {
+  return _open && !_isDir ? f_size(&_fil) : 0;
+}
+
 int File::available() {
   if (!_open || _isDir) return 0;
-  return f_size(&_fil) - f_tell(&_fil);
+  // Clamped, as SdFat's is: on AVR an int wraps past 32 KB left
+  FSIZE_t remaining = f_size(&_fil) - f_tell(&_fil);
+  return remaining > static_cast<FSIZE_t>(INT_MAX) ? INT_MAX : static_cast<int>(remaining);
 }
 
 int File::read() {
