@@ -7,6 +7,51 @@
 
 static const char _MOCK_TESTROOT[] PROGMEM = "TESTROOT";
 
+// A read-only index file over a string, which can seek like a real file
+// and counts the bytes read through it into *bytesRead.
+class MockIndexFile : public Stream {
+  public:
+    MockIndexFile(const char* data, uint16_t* bytesRead):
+        _data(data), _size(data ? strlen(data) : 0), _bytesRead(bytesRead) {};
+
+    MockIndexFile(MockIndexFile&& other) = delete;
+    MockIndexFile& operator=(MockIndexFile&& other) = delete;
+    MockIndexFile(const MockIndexFile&) = delete;
+    MockIndexFile& operator=(const MockIndexFile&) = delete;
+
+    int available() override { return _size - _position; };
+
+    int read() override {
+      int c = -1;
+      if (_position < _size) {
+        c = static_cast<unsigned char>(_data[_position++]);
+        (*_bytesRead)++;
+      }
+      return c;
+    };
+
+    int peek() override { return _position < _size ? static_cast<unsigned char>(_data[_position]) : -1; };
+
+    size_t write(uint8_t) override { return 0; };
+
+    bool seek(uint32_t position) {
+      bool success = position <= _size;
+      if (success) {
+        _position = position;
+      }
+      return success;
+    };
+
+    uint32_t position() { return _position; };
+    uint32_t size() { return _size; };
+
+  private:
+    const char* _data;
+    uint32_t _size;
+    uint32_t _position = 0;
+    uint16_t* _bytesRead;
+};
+
 class MockSdFat {
 
   public:
@@ -38,6 +83,7 @@ class MockSdFat {
       char* renameNewCaptor = nullptr;
       char* readIdxFilenameCaptor = nullptr;
       char* writeIdxFilenameCaptor = nullptr;
+      uint16_t idxBytesRead = 0;
       StringStream writeDataCaptor;
       StringStream writeTxnDataCaptor;
       StringStream writeIdxDataCaptor;
@@ -147,6 +193,14 @@ class MockSdFat {
       ts->readIdxFilenameCaptor = strdup(filename);
       StringStream* ss = new StringStream(ts->onReadIdxData);
       return ss;
+    };
+
+    // As readIndexFileStream(), but seekable. The caller deletes it.
+    MockIndexFile* readIndexFile(const char* filename, void* testState) {
+      TestState* ts = static_cast<TestState*>(testState);
+      if (ts->readIdxFilenameCaptor) free(ts->readIdxFilenameCaptor);
+      ts->readIdxFilenameCaptor = strdup(filename);
+      return new MockIndexFile(ts->onReadIdxData, &ts->idxBytesRead);
     };
 
     Stream* writeIndexFileStream(const char* filename, void* testState) {

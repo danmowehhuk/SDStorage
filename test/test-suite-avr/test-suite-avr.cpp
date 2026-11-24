@@ -130,7 +130,7 @@ void testIndexUpsertLookupRemove(TestInvocation* t) {
   t->verify(sdStorage.idxUpsert(myIdx, &entry2), F("second upsert failed"));
   if (!t->passed()) return;
 
-  // idxHasKey()/idxLookup() both scan the index via _scanIndex.
+  // idxHasKey()/idxLookup() both scan the index via _scanIndexFrom.
   t->verify(sdStorage.idxHasKey(myIdx, "abc"), F("key 'abc' not found"));
   t->verify(sdStorage.idxHasKey(myIdx, "ghi"), F("key 'ghi' not found"));
   char buf[10];
@@ -146,6 +146,62 @@ void testIndexUpsertLookupRemove(TestInvocation* t) {
 
   // cleanup
   f_unlink("/TESTROOT/~IDX/idx1.idx");
+}
+
+// An index of the keys key000 to key199, in lines "keyNNN=NNN" (11 bytes
+// each, 2200 in all), written straight to the card. It's large enough that
+// lookups search it before scanning.
+const uint16_t LARGE_INDEX_KEYS = 200;
+
+void testIdx_largeIndex(TestInvocation* t) {
+  t->setName(F("Index lookups and prefix search in a large index"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  FIL fil;
+  t->verify(f_open(&fil, "/TESTROOT/~IDX/idx5.idx", FA_CREATE_ALWAYS | FA_WRITE) == FR_OK,
+      F("opening the index failed"));
+  if (!t->passed()) return;
+  char line[12]; // Enough for "key199=199\n" + null terminator
+  bool allWritten = true;
+  for (uint16_t i = 0; i < LARGE_INDEX_KEYS; i++) {
+    snprintf_P(line, sizeof(line), PSTR("key%03u=%03u\n"), i, i);
+    UINT written;
+    allWritten &= f_write(&fil, line, strlen(line), &written) == FR_OK && written == strlen(line);
+  }
+  f_close(&fil);
+  t->verify(allWritten, F("writing the index failed"));
+  if (!t->passed()) return;
+
+  Index myIdx(F("idx5"));
+  char key[8]; // Enough for "key199x" + null terminator
+  bool everyKeyFound = true;
+  bool noKeyBetweenFound = true;
+  for (uint16_t i = 0; i < LARGE_INDEX_KEYS; i++) {
+    snprintf_P(key, sizeof(key), PSTR("key%03u"), i);
+    everyKeyFound &= sdStorage.idxHasKey(myIdx, key);
+    snprintf_P(key, sizeof(key), PSTR("key%03ux"), i);
+    noKeyBetweenFound &= !sdStorage.idxHasKey(myIdx, key);
+  }
+  t->verify(everyKeyFound, F("a key in the index wasn't found"));
+  t->verify(noKeyBetweenFound, F("a key between two keys was found"));
+  t->verify(!sdStorage.idxHasKey(myIdx, "a"), F("a key before the first was found"));
+  char value[4]; // Enough for "137" + null terminator
+  t->verify(sdStorage.idxLookup(myIdx, "key137", value, sizeof(value)), F("lookup failed"));
+  t->verifyEqual(value, F("137"));
+
+  sdstorage::SearchResults results("key05");
+  t->verify(sdStorage.idxPrefixSearch(myIdx, &results), F("prefix search failed"));
+  t->verify(!results.trieMode, F("prefix search switched to trie mode"));
+  uint8_t matches = 0;
+  for (sdstorage::KeyValue* kv = results.matchResult; kv; kv = kv->next) {
+    snprintf_P(key, sizeof(key), PSTR("key05%u"), matches);
+    t->verifyEqual(kv->key, key, F("wrong prefix match"));
+    matches++;
+  }
+  t->verify(matches == 10, F("prefix search should match key050 to key059"));
+
+  // cleanup
+  f_unlink("/TESTROOT/~IDX/idx5.idx");
 }
 
 void testTransaction_erase(TestInvocation* t) {
@@ -463,6 +519,7 @@ int main() {
     testPurge,
     testIndexUpsertLookupRemove,
     testIdxRename_toLastKey,
+    testIdx_largeIndex,
     testTransaction_erase,
     testSeqCurrentNext,
     testSeqPeekNext_matchesNextInTxn,

@@ -157,12 +157,34 @@ class IndexScanFilters {
       char* l = strdup(line);
       IndexEntry currEntry = IndexHelpers::parseIndexEntry(l);
       free(l);
-      if (strcmp(state->key, currEntry.key) == 0) {
+      int order = strcmp(state->key, currEntry.key);
+      if (order == 0) {
         state->keyExists = true;
         state->value = strdup(currEntry.value);
-        return false; // stop scanning
       }
-      return true; // keep going
+      // Indexes are sorted, so once a line's key sorts after state->key,
+      // state->key can't be further on
+      return order > 0;
+    }
+
+    // For comparing a key with an index line's
+    struct KeyOrder {
+      const char* key;  // in
+      // out: strcmp(key, the line's key). With no line read it stays
+      // negative, which only narrows a search's end: always safe.
+      int order = -1;
+      KeyOrder(const char* key): key(key) {};
+    };
+
+    // Compares the first line's key with state->key (a KeyOrder), then stops.
+    static bool idxCompareKeyFilter(const char* line, StreamableManager::DestinationStream* /*dest*/,
+          void* statePtr) {
+      KeyOrder* state = static_cast<KeyOrder*>(statePtr);
+      char* l = strdup(line);
+      IndexEntry entry = IndexHelpers::parseIndexEntry(l);
+      free(l);
+      state->order = strcmp(state->key, entry.key);
+      return false;
     }
 
     static bool idxPrefixSearchFilter(const char* line, StreamableManager::DestinationStream* /*dest*/, 
@@ -247,6 +269,7 @@ class IndexScanFilters {
     };
 
     friend class IndexManager;
+    friend class StorageProvider;
 
 };
 

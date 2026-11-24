@@ -1,4 +1,6 @@
 #include "StorageProvider.h"
+#include "IndexScanFilters.h"
+#include "Strings.h"
 
 #if !defined(__SDSTORAGE_TEST)
 #include <string.h>
@@ -291,28 +293,80 @@ bool StorageProvider::_updateIndex(
   return true;
 }
 
-bool StorageProvider::_scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, void* statePtr,
-      void* testState) {
+/*
+ * IndexFile is the backend's file type: a Stream with seek(), position()
+ * and size().
+ */
+template <typename IndexFile>
+bool StorageProvider::_scanIndexFileFrom(IndexFile& file, const char* startKey,
+      StreamableManager::FilterFunction filter, void* statePtr) {
+  bool success = file.seek(_findSearchStart(file, startKey));
+  if (success) {
+    _streams.pipe(&file, nullptr, filter, false, statePtr);
+  }
+  return success;
+}
+
+/*
+ * A binary search by byte offset for where a scan for key should start:
+ * the start of a line, with every line before it holding a smaller key.
+ * Lines vary in length, so each probe lands inside a line and moves on to
+ * the start of the next one.
+ */
+template <typename IndexFile>
+uint32_t StorageProvider::_findSearchStart(IndexFile& file, const char* key) {
+  uint32_t start = 0;
+  // end only bounds the search: the scan from start reads past it as far
+  // as it needs to.
+  uint32_t end = isEmpty(key) ? 0 : file.size();
+  bool keyFound = false;
+  // A line longer than SEARCH_WINDOW can move start past end
+  while (!keyFound && end > start && end - start > SEARCH_WINDOW) {
+    uint32_t middle = start + (end - start) / 2;
+    uint32_t lineStart = end;
+    // From one byte back, so a line that starts at middle isn't skipped
+    if (file.seek(middle - 1)) {
+      int c = 0;
+      while (c != '\n' && c != -1) {
+        c = file.read();
+      }
+      lineStart = file.position();
+    }
+    if (lineStart >= end) {
+      end = middle;
+    } else {
+      IndexScanFilters::KeyOrder keyOrder(key);
+      _streams.pipe(&file, nullptr, IndexScanFilters::idxCompareKeyFilter, false, &keyOrder);
+      if (keyOrder.order > 0) {
+        start = file.position();
+      } else if (keyOrder.order == 0) {
+        start = lineStart;
+        keyFound = true;
+      } else {
+        end = lineStart;
+      }
+    }
+  }
+  return start;
+}
+
+bool StorageProvider::_scanIndexFrom(const char* indexFilename, const char* startKey,
+      StreamableManager::FilterFunction filter, void* statePtr, void* testState) {
   (void)testState;  // used by the test build's mock
-  Stream* src = nullptr;
 #if defined(__SDSTORAGE_TEST)
-  src = _sd.readIndexFileStream(indexFilename, testState);
+  MockIndexFile* file = _sd.readIndexFile(indexFilename, testState);
+  bool success = file && _scanIndexFileFrom(*file, startKey, filter, statePtr);
+  delete file;
 #elif defined(NO_ARDUINO)
-  File srcFile;
-  if (!srcFile.open(indexFilename, FA_READ)) return false;
-  src = &srcFile;
+  File file;
+  bool success = file.open(indexFilename, FA_READ)
+      && _scanIndexFileFrom(file, startKey, filter, statePtr);
+  file.close();
 #else
-  File srcFile = _sd.open(indexFilename, FILE_READ);
-  if (!srcFile) return false;
-  src = &srcFile;
+  File file = _sd.open(indexFilename, FILE_READ);
+  bool success = file && _scanIndexFileFrom(file, startKey, filter, statePtr);
+  file.close();
 #endif
-  _streams.pipe(src, nullptr, filter, false, statePtr);
-#if defined(__SDSTORAGE_TEST)
-  StringStream* ss = static_cast<StringStream*>(src);
-  delete ss;
-#else
-  srcFile.close();
-#endif
-  return true;
+  return success;
 }
 

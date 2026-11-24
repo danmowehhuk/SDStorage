@@ -1112,7 +1112,7 @@ void testIdxLookup(TestInvocation *t) {
   MockSdFat::TestState ts;
   ts.onExistsAlways = true;
   ts.onExistsAlwaysReturn = true;
-  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\nbar=\n"));
+  ts.onReadIdxData = strdup(F("bar=\near=3\negg=45\nfan=1\n"));
 
   Index myIdx(F("myIndex"));
   char buffer[10] = { '\0' };
@@ -1135,6 +1135,89 @@ void testIdxHasKey(TestInvocation *t) {
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
   t->verify(sdStorage->idxHasKey(myIdx, F("ear"), &ts), F("Key should have existed"));
   t->verify(!sdStorage->idxHasKey(myIdx, F("lap"), &ts), F("Key should not have existed"));
+}
+
+// An index of the keys k00 to k99, in lines "kNN=N" (6 bytes each, 600 in all).
+// It's larger than the part of an index a lookup scans line by line.
+const uint8_t LARGE_INDEX_KEYS = 100;
+const uint8_t LARGE_INDEX_LINE_LENGTH = 6;
+
+char* largeIndexData() {
+  char* data = static_cast<char*>(malloc(LARGE_INDEX_KEYS * LARGE_INDEX_LINE_LENGTH + 1));
+  for (uint8_t i = 0; i < LARGE_INDEX_KEYS; i++) {
+    snprintf_P(data + i * LARGE_INDEX_LINE_LENGTH, LARGE_INDEX_LINE_LENGTH + 1, PSTR("k%02u=%u\n"), i, i % 10);
+  }
+  return data;
+}
+
+void testIdxHasKey_largeIndex(TestInvocation *t) {
+  t->setName(F("Index key exists, in a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onReadIdxData = largeIndexData();
+
+  Index myIdx(F("myIndex"));
+  char key[5]; // Enough for "k99x" + null terminator
+  bool everyKeyFound = true;
+  bool noKeyBetweenFound = true;
+  for (uint8_t i = 0; i < LARGE_INDEX_KEYS; i++) {
+    snprintf_P(key, sizeof(key), PSTR("k%02u"), i);
+    everyKeyFound &= sdStorage->idxHasKey(myIdx, key, &ts);
+    snprintf_P(key, sizeof(key), PSTR("k%02ux"), i);
+    noKeyBetweenFound &= !sdStorage->idxHasKey(myIdx, key, &ts);
+  }
+  t->verify(everyKeyFound, F("A key in the index wasn't found"));
+  t->verify(noKeyBetweenFound, F("A key between two keys was found"));
+  t->verify(!sdStorage->idxHasKey(myIdx, F("a"), &ts), F("A key before the first was found"));
+}
+
+void testIdxLookup_largeIndex(TestInvocation *t) {
+  t->setName(F("Index lookup, in a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onReadIdxData = largeIndexData();
+
+  Index myIdx(F("myIndex"));
+  char buffer[4] = { '\0' };
+  t->verify(sdStorage->idxLookup(myIdx, F("k00"), buffer, sizeof(buffer), &ts), F("First key not found"));
+  t->verifyEqual(buffer, F("0"), F("Wrong value for the first key"));
+  t->verify(sdStorage->idxLookup(myIdx, F("k57"), buffer, sizeof(buffer), &ts), F("Middle key not found"));
+  t->verifyEqual(buffer, F("7"), F("Wrong value for a middle key"));
+  t->verify(sdStorage->idxLookup(myIdx, F("k99"), buffer, sizeof(buffer), &ts), F("Last key not found"));
+  t->verifyEqual(buffer, F("9"), F("Wrong value for the last key"));
+}
+
+void testIdxHasKey_readsPartOfLargeIndex(TestInvocation *t) {
+  t->setName(F("Index key exists, reading part of a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onReadIdxData = largeIndexData();
+  const uint16_t halfTheIndex = LARGE_INDEX_KEYS * LARGE_INDEX_LINE_LENGTH / 2;
+
+  Index myIdx(F("myIndex"));
+  t->verify(sdStorage->idxHasKey(myIdx, F("k99"), &ts), F("Last key not found"));
+  t->verify(ts.idxBytesRead > 0, F("Nothing was read"));
+  t->verify(ts.idxBytesRead < halfTheIndex, F("Read half the index or more to find its last key"));
+  ts.idxBytesRead = 0;
+  t->verify(!sdStorage->idxHasKey(myIdx, F("k50x"), &ts), F("Missing key was found"));
+  t->verify(ts.idxBytesRead < halfTheIndex, F("Read half the index or more for a missing key"));
+}
+
+void testIdxHasKey_largeIndexWithoutLastNewline(TestInvocation *t) {
+  t->setName(F("Index key exists, large index without a last newline"));
+  MockSdFat::TestState ts;
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true;
+  ts.onReadIdxData = largeIndexData();
+  ts.onReadIdxData[LARGE_INDEX_KEYS * LARGE_INDEX_LINE_LENGTH - 1] = '\0';
+
+  Index myIdx(F("myIndex"));
+  t->verify(sdStorage->idxHasKey(myIdx, F("k99"), &ts), F("Last key not found"));
+  t->verify(sdStorage->idxHasKey(myIdx, F("k98"), &ts), F("Second-last key not found"));
+  t->verify(!sdStorage->idxHasKey(myIdx, F("k99x"), &ts), F("Key after the last was found"));
 }
 
 void testIdxSearchResults(TestInvocation *t) {
@@ -1235,6 +1318,63 @@ void testIdxPrefixSearch_over10Matches(TestInvocation *t) {
   t->verify(!kv, F("Unexpected extra results"));
 }
 
+void testIdxPrefixSearch_largeIndex(TestInvocation *t) {
+  t->setName(F("Index prefix search, reading part of a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = largeIndexData();
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("k5");
+  t->verify(sdStorage->idxPrefixSearch(myIdx, &sr, &ts), F("idxPrefixSearch failed"));
+  t->verify(!sr.trieMode, F("Should not have switched to trie mode"));
+  char key[4]; // Enough for "k59" + null terminator
+  sdstorage::KeyValue* kv = sr.matchResult;
+  for (uint8_t i = 50; i < 60; i++) {
+    snprintf_P(key, sizeof(key), PSTR("k%02u"), i);
+    t->verify(kv, F("Result should not be nullptr"));
+    if (!t->passed()) return;
+    t->verifyEqual(kv->key, key, F("Incorrect key result"));
+    kv = kv->next;
+  }
+  t->verify(!kv, F("Unexpected extra results"));
+  t->verify(ts.idxBytesRead > 0, F("Nothing was read"));
+  t->verify(ts.idxBytesRead < LARGE_INDEX_KEYS * LARGE_INDEX_LINE_LENGTH / 2,
+      F("Read half the index or more"));
+}
+
+void testIdxPrefixSearch_largeIndexEmptyPrefix(TestInvocation *t) {
+  t->setName(F("Index prefix search, empty prefix on a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = largeIndexData();
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("");
+  t->verify(sdStorage->idxPrefixSearch(myIdx, &sr, &ts), F("idxPrefixSearch failed"));
+  t->verify(sr.trieMode, F("Should have switched to trie mode"));
+  t->verify(sr.trieResult, F("trieResult should be populated"));
+  if (!t->passed()) return;
+  t->verifyEqual(sr.trieResult->key, F("k"), F("Every key starts with k"));
+  t->verify(!sr.trieResult->next, F("Unexpected extra trie results"));
+  t->verify(ts.idxBytesRead == LARGE_INDEX_KEYS * LARGE_INDEX_LINE_LENGTH, F("Should read every key"));
+}
+
+void testIdxPrefixSearch_largeIndexPrefixIsKey(TestInvocation *t) {
+  t->setName(F("Index prefix search, prefix that is a key in a large index"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // index file exists
+  ts.onReadIdxData = largeIndexData();
+
+  Index myIdx(F("myIndex"));
+  sdstorage::SearchResults sr("k50");
+  t->verify(sdStorage->idxPrefixSearch(myIdx, &sr, &ts), F("idxPrefixSearch failed"));
+  t->verify(sr.matchResult, F("matchResult should be populated"));
+  if (!t->passed()) return;
+  t->verifyEqual(sr.matchResult->key, F("k50"), F("Incorrect key result"));
+  t->verifyEqual(sr.matchResult->value, F("0"), F("Incorrect value result"));
+  t->verify(!sr.matchResult->next, F("Unexpected extra results"));
+}
 
 void setup() {
   Serial.begin(9600);
@@ -1309,11 +1449,18 @@ void setup() {
     testIdxRenameKey_addedEarlierInSameTxn,
     testIdxLookup,
     testIdxHasKey,
+    testIdxHasKey_largeIndex,
+    testIdxLookup_largeIndex,
+    testIdxHasKey_readsPartOfLargeIndex,
+    testIdxHasKey_largeIndexWithoutLastNewline,
     testIdxSearchResults,
     testIdxPrefixSearch_noResults,
     testIdxPrefixSearch_emptySearchString,
     testIdxPrefixSearch_under10Matches,
-    testIdxPrefixSearch_over10Matches
+    testIdxPrefixSearch_over10Matches,
+    testIdxPrefixSearch_largeIndex,
+    testIdxPrefixSearch_largeIndexEmptyPrefix,
+    testIdxPrefixSearch_largeIndexPrefixIsKey
   };
 
   runTestSuiteShowMem(tests, before, nullptr);

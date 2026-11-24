@@ -208,7 +208,8 @@ bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* test
     // Index has no entries - return empty search results
     return true;
   }
-  bool success = _storageProvider->_scanIndex(idxFilename, IndexScanFilters::idxPrefixSearchFilter, results, testState);
+  bool success = _storageProvider->_scanIndexFrom(idxFilename, results->searchPrefix,
+      IndexScanFilters::idxPrefixSearchFilter, results, testState);
   if (results->trieMode) {
     // clean up the partial matchResult
     if (results->matchResult) {
@@ -229,7 +230,8 @@ bool IndexManager::idxPrefixSearch(Index idx, SearchResults* results, void* test
 
 /*
  * Scans the index looking for state->key and populating the state->keyExists and state->value
- * fields on the IdxScanCapture object passed in. Scanning stops when the key is found.
+ * fields on the IdxScanCapture object passed in. Scanning starts where a binary search puts it,
+ * and stops at the key or once past where it would be.
  */
 bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCapture* state, void* testState) {
   if (!idxFilename || !state || isEmpty(state->key)) {
@@ -240,7 +242,8 @@ bool IndexManager::_idxScan(const char* idxFilename, IndexScanFilters::IdxScanCa
   }
   bool success = false;
   if (_storageProvider->_exists(idxFilename, testState)) {
-    success = _storageProvider->_scanIndex(idxFilename, IndexScanFilters::idxLookupFilter, state, testState);
+    success = _storageProvider->_scanIndexFrom(idxFilename, state->key,
+        IndexScanFilters::idxLookupFilter, state, testState);
   }
   return success;
 }

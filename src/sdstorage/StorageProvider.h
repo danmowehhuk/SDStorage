@@ -73,8 +73,33 @@ class StorageProvider {
     bool _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
     bool _updateIndex(const char* indexFilename, const char* tmpFilename, 
           StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
-    bool _scanIndex(const char* indexFilename, StreamableManager::FilterFunction filter, 
-          void* statePtr, void* testState = nullptr);
+
+    // Pipes an index's lines through filter until the end of the index or
+    // until filter returns false. A binary search skips the lines before
+    // startKey, so the index must be sorted, as every index write keeps it.
+    // filter may still see a few lines with smaller keys first.
+    // Params:
+    //   indexFilename - the index file's absolute name
+    //   startKey      - the key to start from; "" starts from the first line
+    //   filter        - called with each line from there on
+    //   statePtr      - passed to filter
+    //   testState     - the mock's state, in the test build
+    // Returns true if the index was read, false if it couldn't be opened
+    // or read.
+    bool _scanIndexFrom(const char* indexFilename, const char* startKey,
+          StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
+
+    // Once a search narrows an index down to this many bytes, it scans them
+    // line by line. A smaller window is no faster on an ATmega2560: each
+    // extra probe parses a line, costing about as much as the lines it saves.
+    static const uint16_t SEARCH_WINDOW = 256;
+
+    template <typename IndexFile>
+    bool _scanIndexFileFrom(IndexFile& file, const char* startKey,
+          StreamableManager::FilterFunction filter, void* statePtr);
+
+    template <typename IndexFile>
+    uint32_t _findSearchStart(IndexFile& file, const char* key);
 
     friend class SDStorage;
     friend class SDStorageTestHelper;
