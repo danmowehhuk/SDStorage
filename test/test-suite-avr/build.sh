@@ -1,8 +1,11 @@
 #!/bin/bash
 
 # Usage:
-#   ./build.sh        Build a .hex suitable for flashing to real hardware
-#   ./build.sh -s     Build a .hex suitable for SimulIDE simulation
+#   ./build.sh -c <pin>      Build a .hex suitable for flashing to real hardware
+#   ./build.sh -c <pin> -s   Build a .hex suitable for SimulIDE simulation
+#
+# <pin> is the SD card's chip-select pin as a port letter and bit,
+# e.g. E6 for PE6.
 #
 # Links across four libraries: SDStorage, StreamableDTO, TestTool, and
 # BareMetalHAL. Source discovery/linking mirrors arduino-cli's own
@@ -22,11 +25,19 @@
 set -euo pipefail
 
 SIM_MODE=false
-while getopts "s" opt; do
+CS_PIN=""
+while getopts "sc:" opt; do
   case $opt in
     s) SIM_MODE=true ;;
+    c) CS_PIN="$OPTARG" ;;
+    *) exit 1 ;;
   esac
 done
+
+if [[ ! "$CS_PIN" =~ ^[A-HJ-L][0-7]$ ]]; then
+  echo "ERROR: pass the SD card's chip-select pin with -c <port><bit>, e.g. -c E6 for PE6" >&2
+  exit 1
+fi
 
 find_avr_tool() {
   local tool="$1"
@@ -97,7 +108,8 @@ fi
 # -DDEBUG: enables this suite's own SDStorageHal::print/println
 # diagnostics, all gated #if defined(DEBUG) - without it none of that
 # code (including inside fsck()) is even compiled here.
-COMMON_FLAGS=(-Wall -Wextra -Os -fpermissive -DNO_ARDUINO -DHAL_AVR -DDEBUG -DF_CPU=16000000UL -mmcu=atmega2560 -ffunction-sections -fdata-sections \
+COMMON_FLAGS=(-Wall -Wextra -Os -fpermissive -DNO_ARDUINO -DHAL_AVR -DDEBUG -DF_CPU=16000000UL \
+  -DSD_CS_PORT="${CS_PIN:0:1}" -DSD_CS_BIT="${CS_PIN:1:1}" -mmcu=atmega2560 -ffunction-sections -fdata-sections \
   -I "$DIR/../../src" -I "$STREAMABLEDTO_SRC" -I "$BAREMETALHAL_SRC" -I "$TESTTOOL_SRC")
 CXXFLAGS=(-std=gnu++11 "${COMMON_FLAGS[@]}")
 CFLAGS=(-std=gnu99 "${COMMON_FLAGS[@]}")
