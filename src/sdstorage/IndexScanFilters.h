@@ -152,6 +152,34 @@ class IndexScanFilters {
       return true;
     }
 
+    // For passing a rewrite's filter and its state through idxDedupeFilter
+    struct DedupeCapture {
+      StreamableManager::FilterFunction filter;  // in
+      void* filterState;                         // in
+      char* prevKey;                             // the previous line's key, in a buffer that holds a line
+      DedupeCapture(StreamableManager::FilterFunction filter, void* filterState, char* prevKey):
+          filter(filter), filterState(filterState), prevKey(prevKey) { prevKey[0] = '\0'; };
+    };
+
+    // Drops a line whose key repeats the previous line's, keeping the first,
+    // and passes every other line to state->filter. Every rewrite of an index
+    // goes through this, so it also removes duplicates an earlier write left.
+    static bool idxDedupeFilter(const char* line, StreamableManager::DestinationStream* dest,
+          void* statePtr) {
+      DedupeCapture* state = static_cast<DedupeCapture*>(statePtr);
+      const char* eq = strchr(line, '=');
+      size_t keyLength = eq ? static_cast<size_t>(eq - line) : strlen(line);
+      // The key's trailing spaces don't count, as in IndexHelpers::parseIndexEntry
+      while (keyLength > 0 && isspace(line[keyLength - 1])) keyLength--;
+      if (keyLength > 0 && strlen(state->prevKey) == keyLength
+          && strncmp(line, state->prevKey, keyLength) == 0) {
+        return true;
+      }
+      memcpy(state->prevKey, line, keyLength);
+      state->prevKey[keyLength] = '\0';
+      return state->filter(line, dest, state->filterState);
+    }
+
     static bool idxLookupFilter(const char* line, StreamableManager::DestinationStream* /*dest*/, 
           void* statePtr) {
       IdxScanCapture* state = static_cast<IdxScanCapture*>(statePtr);

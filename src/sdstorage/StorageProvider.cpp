@@ -282,7 +282,9 @@ bool StorageProvider::_updateIndex(
   src = &srcFile;
   dest = &destFile;
 #endif
-  _streams.pipe(src, dest, filter, false, statePtr);
+  char prevKey[getBufferSize()];
+  IndexScanFilters::DedupeCapture dedupe(filter, statePtr, prevKey);
+  _streams.pipe(src, dest, IndexScanFilters::idxDedupeFilter, false, &dedupe);
 #if defined(__SDSTORAGE_TEST)
   StringStream* ss = static_cast<StringStream*>(src);
   delete ss;

@@ -973,6 +973,72 @@ void testIdxUpsert_sameKeyTwiceBeforeIndexExists(TestInvocation *t) {
   sdStorage->abortTxn(txn, &ts);
 }
 
+void testIdxUpsert_dropsDuplicateKey(TestInvocation* t) {
+  t->setName(F("Index upsert - drops a repeated key"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
+  ts.onReadIdxData = strdup(F("ear=3\near=3\nfan=1\n"));
+  IndexEntry entry1(F("gum"), F("2"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=3\nfan=1\ngum=2\n"), F("Repeated key not dropped"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_dropsDuplicateKeyAfterUpsert(TestInvocation* t) {
+  t->setName(F("Index upsert - drops a repeated key after the upserted one, keeping the first value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
+  ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=2\n"));
+  IndexEntry entry1(F("ear"), F("6"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\n"), F("Repeated key not dropped"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxUpsert_updatesDuplicateKey(TestInvocation* t) {
+  t->setName(F("Index upsert - updating a repeated key leaves one line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
+  ts.onReadIdxData = strdup(F("ear=3\near=4\nfan=1\n"));
+  IndexEntry entry1(F("ear"), F("6"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\n"), F("Repeated key not dropped"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
 void testIdxRemove(TestInvocation *t) {
   t->setName(F("Index remove"));
   MockSdFat::TestState ts;
@@ -990,6 +1056,28 @@ void testIdxRemove(TestInvocation *t) {
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
   t->verify(sdStorage->idxRemove(&ts, myIdx, F("ear"), txn), F("Remove key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("egg=45\nfan=1\n"), F("Unexpected index data after remove key"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
+void testIdxRemove_duplicateKey(TestInvocation *t) {
+  t->setName(F("Index remove - removes a repeated key"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true;  // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original index file
+  ts.onExistsReturn[3] = true;  // idxRemove: readSource (original) exists -> proceed
+  ts.onExistsReturn[4] = false; // _swapIntoPlace: no prior tmp to remove - this is the first write
+  ts.onRenameReturn = true;     // scratch file renamed into place as the staged tmp file
+  ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=1\ngum=2\n"));
+  t->verify(sdStorage->idxRemove(&ts, myIdx, F("fan"), txn), F("Remove key failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=3\ngum=2\n"), F("Repeated key not removed"));
 
   ts.onRemoveReturn = true;
   sdStorage->abortTxn(txn, &ts);
@@ -1064,6 +1152,27 @@ void testIdxRenameKey_toEarlierKey(TestInvocation *t) {
   ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
   t->verify(sdStorage->idxRename(&ts, myIdx, F("fan"), F("bag"), txn), F("Rename key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=1\near=3\negg=45\n"), F("Unexpected index data after rename key"));
+
+  t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxRenameKey_duplicateKey(TestInvocation *t) {
+  t->setName(F("Rename index key - renames a repeated key once, with the first value"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=2\n"));
+  t->verify(sdStorage->idxRename(&ts, myIdx, F("fan"), F("bag"), txn), F("Rename key failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=1\near=3\n"), F("Repeated key not dropped"));
 
   t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
 }
@@ -1463,10 +1572,15 @@ void setup() {
     testIdxUpsert_updateLine,
     testIdxUpsert_repeatedInSameTxn,
     testIdxUpsert_sameKeyTwiceBeforeIndexExists,
+    testIdxUpsert_dropsDuplicateKey,
+    testIdxUpsert_dropsDuplicateKeyAfterUpsert,
+    testIdxUpsert_updatesDuplicateKey,
     testIdxRemove,
+    testIdxRemove_duplicateKey,
     testIdxRemove_keyAddedEarlierInSameTxn,
     testIdxRenameKey_happyPath,
     testIdxRenameKey_toEarlierKey,
+    testIdxRenameKey_duplicateKey,
     testIdxRenameKey_keyDoesntExist,
     testIdxRenameKey_addedEarlierInSameTxn,
     testIdxLookup,
