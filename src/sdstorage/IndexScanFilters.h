@@ -157,6 +157,7 @@ class IndexScanFilters {
       StreamableManager::FilterFunction filter;  // in
       void* filterState;                         // in
       char* prevKey;                             // the previous line's key, in a buffer that holds a line
+      bool stopped = false;                      // out: filter stopped the rewrite
       DedupeCapture(StreamableManager::FilterFunction filter, void* filterState, char* prevKey):
           filter(filter), filterState(filterState), prevKey(prevKey) { prevKey[0] = '\0'; };
     };
@@ -177,7 +178,8 @@ class IndexScanFilters {
       }
       memcpy(state->prevKey, line, keyLength);
       state->prevKey[keyLength] = '\0';
-      return state->filter(line, dest, state->filterState);
+      state->stopped = !state->filter(line, dest, state->filterState);
+      return !state->stopped;
     }
 
     static bool idxLookupFilter(const char* line, StreamableManager::DestinationStream* /*dest*/, 

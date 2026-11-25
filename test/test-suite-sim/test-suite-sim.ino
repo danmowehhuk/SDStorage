@@ -1039,6 +1039,28 @@ void testIdxUpsert_updatesDuplicateKey(TestInvocation* t) {
   sdStorage->abortTxn(txn, &ts);
 }
 
+void testIdxUpsert_stopsAtEmptyKey(TestInvocation* t) {
+  t->setName(F("Index upsert - fails, keeping the index, at a line with no key"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // a swap would succeed, so only the stop can fail the upsert
+  ts.onReadIdxData = strdup(F("ear=3\n=x\nfan=1\n"));
+  IndexEntry entry1(F("gum"), F("2"));
+  t->verify(!sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Upsert should have failed"));
+  t->verify(!ts.renameOldCaptor, F("The incomplete copy replaced the index"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
 void testIdxRemove(TestInvocation *t) {
   t->setName(F("Index remove"));
   MockSdFat::TestState ts;
@@ -1173,6 +1195,48 @@ void testIdxRenameKey_duplicateKey(TestInvocation *t) {
   ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=2\n"));
   t->verify(sdStorage->idxRename(&ts, myIdx, F("fan"), F("bag"), txn), F("Rename key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=1\near=3\n"), F("Repeated key not dropped"));
+
+  t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxRenameKey_toExistingLaterKey(TestInvocation *t) {
+  t->setName(F("Rename index key - fails, keeping the index, if the new key exists after the old"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\ngum=7\n"));
+  t->verify(!sdStorage->idxRename(&ts, myIdx, F("ear"), F("fan"), txn), F("Rename key should have failed"));
+  t->verify(!ts.renameOldCaptor, F("The incomplete copy replaced the index"));
+
+  t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
+void testIdxRenameKey_toExistingEarlierKey(TestInvocation *t) {
+  t->setName(F("Rename index key - fails, keeping the index, if the new key exists before the old"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\ngum=7\n"));
+  t->verify(!sdStorage->idxRename(&ts, myIdx, F("fan"), F("ear"), txn), F("Rename key should have failed"));
+  t->verify(!ts.renameOldCaptor, F("The incomplete copy replaced the index"));
 
   t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
 }
@@ -1575,12 +1639,15 @@ void setup() {
     testIdxUpsert_dropsDuplicateKey,
     testIdxUpsert_dropsDuplicateKeyAfterUpsert,
     testIdxUpsert_updatesDuplicateKey,
+    testIdxUpsert_stopsAtEmptyKey,
     testIdxRemove,
     testIdxRemove_duplicateKey,
     testIdxRemove_keyAddedEarlierInSameTxn,
     testIdxRenameKey_happyPath,
     testIdxRenameKey_toEarlierKey,
     testIdxRenameKey_duplicateKey,
+    testIdxRenameKey_toExistingLaterKey,
+    testIdxRenameKey_toExistingEarlierKey,
     testIdxRenameKey_keyDoesntExist,
     testIdxRenameKey_addedEarlierInSameTxn,
     testIdxLookup,

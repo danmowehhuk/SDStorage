@@ -274,7 +274,9 @@ bool StorageProvider::_updateIndex(
 #else
   File srcFile = _sd.open(indexFilename, FILE_READ);
   if (!srcFile) return false;
-  File destFile = _sd.open(tmpFilename, FILE_WRITE);
+  // Truncate, as FA_CREATE_ALWAYS does: a failed rewrite can leave tmpFilename
+  // behind, and FILE_WRITE would append to it
+  File destFile = _sd.open(tmpFilename, O_WRONLY | O_CREAT | O_TRUNC);
   if (!destFile) {
     srcFile.close();
     return false;
@@ -292,7 +294,8 @@ bool StorageProvider::_updateIndex(
   srcFile.close();
   destFile.close();
 #endif
-  return true;
+  // A filter stops the rewrite only to abort it, so tmpFilename is incomplete
+  return !dedupe.stopped;
 }
 
 /*
