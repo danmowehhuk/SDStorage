@@ -131,7 +131,8 @@ class IndexScanFilters {
       } else if (strcmp(state->newKey, currEntry.key) == 0) {
         // new key already exists - abort
         return false;
-      } else if (strcmp(state->newKey, currEntry.key) < 0 &&     // state->newKey is before key
+      } else if (!state->didInsert &&                           // not inserted yet AND
+              strcmp(state->newKey, currEntry.key) < 0 &&        // state->newKey is before key
               (!state->prevKey                                   // this is the first key OR
                || strcmp(state->newKey, state->prevKey) > 0)) {  // state->newKey is after prevKey
           // insert new newKey/value before line

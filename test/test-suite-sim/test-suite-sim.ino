@@ -1047,6 +1047,27 @@ void testIdxRenameKey_happyPath(TestInvocation *t) {
   t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
 }
 
+void testIdxRenameKey_toEarlierKey(TestInvocation *t) {
+  t->setName(F("Rename index key - to a key two lines earlier"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists
+  ts.onExistsReturn[1] = false; // temp file does not exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsAlways = true;
+  ts.onExistsAlwaysReturn = true; // simplify the rest of the test
+  ts.onRenameReturn = true;
+  ts.onRemoveReturn = true;
+  ts.onReadIdxData = strdup(F("ear=3\negg=45\nfan=1\n"));
+  t->verify(sdStorage->idxRename(&ts, myIdx, F("fan"), F("bag"), txn), F("Rename key failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=1\near=3\negg=45\n"), F("Unexpected index data after rename key"));
+
+  t->verify(sdStorage->abortTxn(txn, &ts), F("abortTxn failed"));
+}
+
 void testIdxRenameKey_keyDoesntExist(TestInvocation *t) {
   delay(100);
   t->setName(F("Rename index key - key doesn't exist"));
@@ -1445,6 +1466,7 @@ void setup() {
     testIdxRemove,
     testIdxRemove_keyAddedEarlierInSameTxn,
     testIdxRenameKey_happyPath,
+    testIdxRenameKey_toEarlierKey,
     testIdxRenameKey_keyDoesntExist,
     testIdxRenameKey_addedEarlierInSameTxn,
     testIdxLookup,
