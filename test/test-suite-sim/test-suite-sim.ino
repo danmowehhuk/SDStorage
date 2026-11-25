@@ -1017,6 +1017,28 @@ void testIdxUpsert_dropsDuplicateKeyAfterUpsert(TestInvocation* t) {
   sdStorage->abortTxn(txn, &ts);
 }
 
+void testIdxUpsert_updatesDuplicateKey(TestInvocation* t) {
+  t->setName(F("Index upsert - updating a repeated key leaves one line"));
+  MockSdFat::TestState ts;
+  ts.onExistsReturn[0] = true; // myIndex.idx exists for txn
+  ts.onExistsReturn[1] = false; // myIndex's tmp file doesn't exist yet
+
+  Index myIdx(F("myIndex"));
+  Transaction* txn = sdStorage->beginTxn(&ts, myIdx);
+  t->verify(txn, F("Create transaction failed"));
+
+  ts.onExistsReturn[2] = false; // getReadSource: tmp still doesn't exist -> readSource = original
+  ts.onExistsReturn[3] = true;  // idxUpsert: readSource (original) exists -> stage+swap path
+  ts.onRenameReturn = true;     // scratch file swapped into place as the staged tmp file
+  ts.onReadIdxData = strdup(F("ear=3\near=4\nfan=1\n"));
+  IndexEntry entry1(F("ear"), F("6"));
+  t->verify(sdStorage->idxUpsert(&ts, myIdx, &entry1, txn), F("Upsert failed"));
+  t->verifyEqual(ts.writeIdxDataCaptor.get(), F("ear=6\nfan=1\n"), F("Repeated key not dropped"));
+
+  ts.onRemoveReturn = true;
+  sdStorage->abortTxn(txn, &ts);
+}
+
 void testIdxRemove(TestInvocation *t) {
   t->setName(F("Index remove"));
   MockSdFat::TestState ts;
@@ -1135,7 +1157,7 @@ void testIdxRenameKey_toEarlierKey(TestInvocation *t) {
 }
 
 void testIdxRenameKey_duplicateKey(TestInvocation *t) {
-  t->setName(F("Rename index key - renames a repeated key once"));
+  t->setName(F("Rename index key - renames a repeated key once, with the first value"));
   MockSdFat::TestState ts;
   ts.onExistsReturn[0] = true; // myIndex.idx exists
   ts.onExistsReturn[1] = false; // temp file does not exist yet
@@ -1148,7 +1170,7 @@ void testIdxRenameKey_duplicateKey(TestInvocation *t) {
   ts.onExistsAlwaysReturn = true; // simplify the rest of the test
   ts.onRenameReturn = true;
   ts.onRemoveReturn = true;
-  ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=1\n"));
+  ts.onReadIdxData = strdup(F("ear=3\nfan=1\nfan=2\n"));
   t->verify(sdStorage->idxRename(&ts, myIdx, F("fan"), F("bag"), txn), F("Rename key failed"));
   t->verifyEqual(ts.writeIdxDataCaptor.get(), F("bag=1\near=3\n"), F("Repeated key not dropped"));
 
@@ -1552,6 +1574,7 @@ void setup() {
     testIdxUpsert_sameKeyTwiceBeforeIndexExists,
     testIdxUpsert_dropsDuplicateKey,
     testIdxUpsert_dropsDuplicateKeyAfterUpsert,
+    testIdxUpsert_updatesDuplicateKey,
     testIdxRemove,
     testIdxRemove_duplicateKey,
     testIdxRemove_keyAddedEarlierInSameTxn,

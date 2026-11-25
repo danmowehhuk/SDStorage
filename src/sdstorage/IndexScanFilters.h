@@ -169,11 +169,13 @@ class IndexScanFilters {
       DedupeCapture* state = static_cast<DedupeCapture*>(statePtr);
       const char* eq = strchr(line, '=');
       size_t keyLength = eq ? static_cast<size_t>(eq - line) : strlen(line);
+      // The key's trailing spaces don't count, as in IndexHelpers::parseIndexEntry
+      while (keyLength > 0 && isspace(line[keyLength - 1])) keyLength--;
       if (keyLength > 0 && strlen(state->prevKey) == keyLength
           && strncmp(line, state->prevKey, keyLength) == 0) {
         return true;
       }
-      strncpy(state->prevKey, line, keyLength);
+      memcpy(state->prevKey, line, keyLength);
       state->prevKey[keyLength] = '\0';
       return state->filter(line, dest, state->filterState);
     }
