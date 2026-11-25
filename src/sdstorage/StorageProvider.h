@@ -71,6 +71,9 @@ class StorageProvider {
     bool _removeTree(const char* dirName, void* testState = nullptr);
     bool _rename(const char* oldFilename, const char* newFilename, void* testState = nullptr);
     bool _writeIndexLine(const char* indexFilename, const char* line, void* testState = nullptr);
+    // Rewrites indexFilename into tmpFilename through filter, dropping repeated
+    // keys. False if it couldn't, or if filter stopped it: tmpFilename is then
+    // incomplete and must not be used.
     bool _updateIndex(const char* indexFilename, const char* tmpFilename, 
           StreamableManager::FilterFunction filter, void* statePtr, void* testState = nullptr);
 

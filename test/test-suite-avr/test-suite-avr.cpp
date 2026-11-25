@@ -148,6 +148,91 @@ void testIndexUpsertLookupRemove(TestInvocation* t) {
   f_unlink("/TESTROOT/~IDX/idx1.idx");
 }
 
+// Writes content to path, replacing the file, straight to the card
+bool writeCardFile(const char* path, const FlashStr* content) {
+  FIL fil;
+  if (f_open(&fil, path, FA_CREATE_ALWAYS | FA_WRITE) != FR_OK) return false;
+  char text[48];
+  strncpy_P(text, reinterpret_cast<const char*>(content), sizeof(text) - 1);
+  text[sizeof(text) - 1] = '\0';
+  UINT written;
+  bool success = f_write(&fil, text, strlen(text), &written) == FR_OK && written == strlen(text);
+  return f_close(&fil) == FR_OK && success;
+}
+
+// Reads path into buffer straight from the card, null-terminated
+bool readCardFile(const char* path, char* buffer, size_t bufferSize) {
+  FIL fil;
+  if (f_open(&fil, path, FA_READ) != FR_OK) return false;
+  UINT read;
+  bool success = f_read(&fil, buffer, bufferSize - 1, &read) == FR_OK;
+  buffer[success ? read : 0] = '\0';
+  return f_close(&fil) == FR_OK && success;
+}
+
+static const char IDX6_PATH[] = "/TESTROOT/~IDX/idx6.idx";
+
+// A write to idx6 that must fail and leave its lines exactly as they were
+void verifyIdx6WriteFails(TestInvocation* t, const FlashStr* lines, bool (*write)(Index)) {
+  t->verify(writeCardFile(IDX6_PATH, lines), F("writing the index failed"));
+  if (!t->passed()) return;
+  t->verify(!write(Index(F("idx6"))), F("the write should have failed"));
+  char after[48];
+  t->verify(readCardFile(IDX6_PATH, after, sizeof(after)), F("reading the index failed"));
+  t->verifyEqual(after, lines, F("the index changed"));
+  f_unlink(IDX6_PATH);
+}
+
+void testIdxRename_toExistingLaterKey(TestInvocation* t) {
+  t->setName(F("idxRename() onto an existing later key fails, keeping the index"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  verifyIdx6WriteFails(t, F("ear=3\negg=45\nfan=1\ngum=7\n"),
+      [](Index idx) { return sdStorage.idxRename(idx, "ear", "fan"); });
+}
+
+void testIdxRename_toExistingEarlierKey(TestInvocation* t) {
+  t->setName(F("idxRename() onto an existing earlier key fails, keeping the index"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  verifyIdx6WriteFails(t, F("ear=3\negg=45\nfan=1\ngum=7\n"),
+      [](Index idx) { return sdStorage.idxRename(idx, "fan", "ear"); });
+}
+
+void testIdxUpsert_stopsAtEmptyKey(TestInvocation* t) {
+  t->setName(F("idxUpsert() past a line with no key fails, keeping the index"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  verifyIdx6WriteFails(t, F("ear=3\n=x\nfan=1\n"), [](Index idx) {
+    IndexEntry entry(F("gum"), F("2"));
+    return sdStorage.idxUpsert(idx, &entry);
+  });
+}
+
+void testTransaction_writeAfterFailedRename(TestInvocation* t) {
+  t->setName(F("A failed idxRename() leaves the transaction's index intact"));
+  t->verify(beginSuccess, F("SKIPPED"));
+  if (!t->passed()) return;
+  t->verify(writeCardFile(IDX6_PATH, F("ear=3\negg=45\nfan=1\n")), F("writing the index failed"));
+  if (!t->passed()) return;
+
+  Index myIdx(F("idx6"));
+  Transaction* txn = sdStorage.beginTxn(myIdx);
+  t->verify(txn, F("beginTxn failed"));
+  if (!t->passed()) return;
+  t->verify(!sdStorage.idxRename(myIdx, "fan", "ear", txn), F("rename onto an earlier key should have failed"));
+  t->verify(!sdStorage.idxRename(myIdx, "ear", "fan", txn), F("rename onto a later key should have failed"));
+  IndexEntry entry(F("gum"), F("7"));
+  t->verify(sdStorage.idxUpsert(myIdx, &entry, txn), F("upsert after the failed renames failed"));
+  t->verify(sdStorage.commitTxn(txn), F("commitTxn failed"));
+  if (!t->passed()) return;
+
+  char after[48];
+  t->verify(readCardFile(IDX6_PATH, after, sizeof(after)), F("reading the index failed"));
+  t->verifyEqual(after, F("ear=3\negg=45\nfan=1\ngum=7\n"), F("the committed index is wrong"));
+  f_unlink(IDX6_PATH);
+}
+
 // An index of the keys key000 to key199, in lines "keyNNN=NNN" (11 bytes
 // each, 2200 in all), written straight to the card. It's large enough that
 // lookups search it before scanning.
@@ -519,6 +604,10 @@ int main() {
     testPurge,
     testIndexUpsertLookupRemove,
     testIdxRename_toLastKey,
+    testIdxRename_toExistingLaterKey,
+    testIdxRename_toExistingEarlierKey,
+    testIdxUpsert_stopsAtEmptyKey,
+    testTransaction_writeAfterFailedRename,
     testIdx_largeIndex,
     testTransaction_erase,
     testSeqCurrentNext,
