@@ -15,11 +15,13 @@
 
 using namespace BareMetalHAL;
 
-// This board's pins: hardware SPI SCK=PB1/MOSI=PB2/MISO=PB3 (verified
-// against pins_arduino.h), SD module's own CS=PE7 (this board's real
-// wiring, confirmed directly - not a generic Mega SD shield's usual
-// SS=PB0/D53 convention). Card-detect is on PE6, not used by this test.
-static const uint8_t SD_CS_PIN = pin(Port::E, 7);
+// Hardware SPI is SCK=PB1/MOSI=PB2/MISO=PB3 (verified against
+// pins_arduino.h). The SD card's chip-select pin depends on the board,
+// so build.sh's -c option passes it in as SD_CS_PORT and SD_CS_BIT.
+#if !defined(SD_CS_PORT) || !defined(SD_CS_BIT)
+#error "Build with ./build.sh -c <port><bit> (e.g. -c E6) for the SD card's chip-select pin"
+#endif
+static const uint8_t SD_CS_PIN = pin(Port::SD_CS_PORT, SD_CS_BIT);
 
 static const char TESTROOT[] PROGMEM = "TESTROOT";
 
@@ -585,8 +587,8 @@ void testTransaction_repeatFileIndexAndSequenceEdits(TestInvocation* t) {
 int main() {
   Uart0::begin(9600);
   timingInit();
-  // CS isn't wired to this chip's own hardware SS pin on this board, so
-  // PB0 needs its own OUTPUT configuration - and it must happen BEFORE
+  // PB0 is this chip's hardware SS pin, so it needs its own OUTPUT
+  // configuration even when the card's CS is another pin - and it must happen BEFORE
   // spiBegin(), not after: spiBegin() writes MSTR=1 to SPCR, and if SS
   // is still an input reading LOW at that exact moment, the hardware
   // immediately clears MSTR back to 0 (auto-switch to Slave mode, per
