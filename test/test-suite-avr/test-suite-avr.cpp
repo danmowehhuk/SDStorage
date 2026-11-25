@@ -16,10 +16,10 @@
 using namespace BareMetalHAL;
 
 // This board's pins: hardware SPI SCK=PB1/MOSI=PB2/MISO=PB3 (verified
-// against pins_arduino.h), SD module's own CS=PE7 (this board's real
-// wiring, confirmed directly - not a generic Mega SD shield's usual
-// SS=PB0/D53 convention). Card-detect is on PE6, not used by this test.
-static const uint8_t SD_CS_PIN = pin(Port::E, 7);
+// against pins_arduino.h), SD module's own CS=PE6 (this board's wiring,
+// not a generic Mega SD shield's usual SS=PB0/D53 convention).
+// Card-detect is on PE7, not used by this test.
+static const uint8_t SD_CS_PIN = pin(Port::E, 6);
 
 static const char TESTROOT[] PROGMEM = "TESTROOT";
 
